@@ -1,10 +1,24 @@
 import 'package:flutter/material.dart';
-
+ 
 
 void main() {
+  //global variable declarations
+
   runApp(const MyApp());
 }
 
+void_findThings() {
+  //function to find the variables in the equation
+   var equation = '6x + 5x = -11';
+ var x;
+var y;
+var solution;
+ for (var i = 0; i < equation.length; i++) {
+   if (isNumeric(equation[i])) {
+     x = equation[i];
+   
+ } 
+}
 
 class MyApp extends StatelessWidget {
   const MyApp({super.key});
@@ -55,7 +69,7 @@ class _TextBoxExampleState extends State<TextBoxExample> {
               controller: _controller,
               decoration: const InputDecoration(
                 border: OutlineInputBorder(),
-                labelText: 'Type equation here',
+                labelText: 'Type equation here: ',
               ),
             ),
             const SizedBox(height: 20),
