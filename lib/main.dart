@@ -9,14 +9,14 @@ void main() {
 
 void_findThings() {
   //function to find the variables in the equation
-   var equation = '6x + 5x = -11';
- var x;
-var y;
-var solution;
+   const equation = '6x + 5x = -11';
+  int x;
+int y;
+int solution;
  for (var i = 0; i < equation.length; i++) {
-   if (isNumeric(equation[i])) {
-     x = equation[i];
-   
+   if (equation[i] == 'x'){
+
+   }
  } 
 }
 
