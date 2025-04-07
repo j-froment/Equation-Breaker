@@ -10,16 +10,43 @@ void main() {
 void_findThings() {
   //function to find the variables in the equation
    const equation = '6x + 5x = -11';
-  int x;
-int y;
-int solution;
+   var left="";
+   var right ="";
+  List<Widget> xval; 
+List<Widget> constants;
  for (var i = 0; i < equation.length; i++) {
-   if (equation[i] == 'x'){
-
+   if (equation[i] == '='){
+      left = equation.substring(0,i);
+      right = equation.substring(i+1);
    }
  } 
-}
+for (var i = 0; i < left.length; i++) {
+  if (isNumeric(left[i])){
+    var addval = 'left[i]';
+while (true){
+  int check =1;
+  if (isNumeric(equation[i+check])){
+addval = addval + equation[i+check];
+check ++;
+  }
+else {
+  if (equation[i+check] == 'x'){
 
+xval.add(addval);
+  }
+}
+}
+  }
+}
+}
+bool isNumeric(String input) {
+  if (int.tryParse(input) != null) {
+    return true;
+  } else if (double.tryParse(input) != null) {
+    return true;
+  } else {
+return false;  }
+}
 class MyApp extends StatelessWidget {
   const MyApp({super.key});
 
