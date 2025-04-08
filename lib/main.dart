@@ -9,11 +9,12 @@ void main() {
 
 void_findThings() {
   //function to find the variables in the equation
-   const equation = '6x + 5x = -11';
+   const equation = '6x + 5x = 11';
    var left="";
    var right ="";
-  List<Widget> xval; 
-List<Widget> constants;
+  List<int> xval =[];
+  
+List<int> constants =[];
  for (var i = 0; i < equation.length; i++) {
    if (equation[i] == '='){
       left = equation.substring(0,i);
@@ -30,9 +31,13 @@ addval = addval + equation[i+check];
 check ++;
   }
 else {
+  var toadd = int.parse(addval);
+addval="";
   if (equation[i+check] == 'x'){
-
-xval.add(addval);
+xval.add(toadd);
+  }
+  else {
+    constants.add(toadd);
   }
 }
 }
