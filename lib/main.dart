@@ -21,27 +21,60 @@ List<int> constants =[];
       right = equation.substring(i+1);
    }
  } 
-for (var i = 0; i < left.length; i++) {
-  if (isNumeric(left[i])){
-    var addval = 'left[i]';
+ int j=0;
+while(j < left.length) {
+  if (isNumeric(left[j])){
+    var addval = left[j];
 while (true){
   int check =1;
-  if (isNumeric(equation[i+check])){
-addval = addval + equation[i+check];
+  if (isNumeric(left[j+check])){
+addval = addval + left[j+check];
 check ++;
   }
 else {
   var toadd = int.parse(addval);
 addval="";
-  if (equation[i+check] == 'x'){
+  if (left[j+check] == 'x'){
 xval.add(toadd);
   }
   else {
     constants.add(toadd);
   }
+  j+= check+1;
+  break;
 }
 }
   }
+
+
+}
+ int i=0;
+
+while(i < right.length) {
+  if (isNumeric(right[i])){
+    var addval = right[i];
+while (true){
+  int check =1;
+  if (isNumeric(right[i+check])){
+addval = addval + right[i+check];
+check ++;
+  }
+else {
+  var toadd = int.parse(addval);
+addval="";
+  if (right[i+check] == 'x'){
+xval.add(toadd);
+  }
+  else {
+    constants.add(toadd);
+  }
+  i+= check+1;
+  break;
+}
+}
+  }
+
+  
 }
 }
 bool isNumeric(String input) {
