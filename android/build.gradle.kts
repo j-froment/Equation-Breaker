@@ -19,3 +19,15 @@ subprojects {
 tasks.register<Delete>("clean") {
     delete(rootProject.layout.buildDirectory)
 }
+android {
+    compileSdk = 34
+
+    defaultConfig {
+        applicationId = "com.example.yourapp"
+        minSdk = 21 
+        targetSdk = 34
+    }
+}
+
+
+
