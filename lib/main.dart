@@ -1,8 +1,9 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:gallery_picker/gallery_picker.dart';
+import 'package:google_mlkit_text_recognition/google_mlkit_text_recognition.dart';
 
 void main() {
-  //global variable declarations
-
   runApp(const MyApp());
 }
 
@@ -19,6 +20,7 @@ Widget findThings(String equation) {
     if (equation[i] == '=') {
       left = equation.substring(0, i);
       right = equation.substring(i + 1);
+      break;
     }
   }
 
@@ -98,51 +100,68 @@ bool isNumeric(String s) {
   return double.tryParse(s) != null;
 }
 
-
-
-
-
 class MyApp extends StatelessWidget {
   const MyApp({super.key});
-
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Text Box Demo',
+      theme: ThemeData(
+        scaffoldBackgroundColor: const Color.fromARGB(255, 230, 249, 205),
+      ),
+      title: 'Dysculia Guiding App',
       home: const TextBoxExample(),
     );
   }
 }
 
-
 class TextBoxExample extends StatefulWidget {
   const TextBoxExample({super.key});
-
 
   @override
   State<TextBoxExample> createState() => _TextBoxExampleState();
 }
 
-
 class _TextBoxExampleState extends State<TextBoxExample> {
   final TextEditingController _controller = TextEditingController();
-  String _displayText = '';
-    Widget? _equationWidget;
+  File? selectedMedia;
+  String extractedText = "";
 
-
-
- void _updateText() {
-  setState(() {
-    _displayText = _controller.text;
-    _equationWidget = findThings(_controller.text);
-  });
-}
-
-
-
-  void _updatePicture() {
+  void _goToNewPage() {
+    String equation = _controller.text;
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => EquationPage(equation: equation),
+      ),
+    );
   }
+
+  Future<void> _pickImage() async {
+    List<MediaFile>? media =
+        await GalleryPicker.pickMedia(context: context, singleMedia: true);
+    if (media != null && media.isNotEmpty) {
+      var data = await media.first.getFile();
+      setState(() {
+        selectedMedia = data;
+      });
+      _extractTextFromImage(data);
+    }
+  }
+
+  Future<void> _extractTextFromImage(File file) async {
+    final textRecognizer = TextRecognizer(script: TextRecognitionScript.latin);
+    final inputImage = InputImage.fromFile(file);
+    final RecognizedText recognizedText =
+        await textRecognizer.processImage(inputImage);
+    textRecognizer.close();
+
+    setState(() {
+      extractedText = recognizedText.text;
+      _controller.text = extractedText;
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -155,29 +174,36 @@ class _TextBoxExampleState extends State<TextBoxExample> {
               controller: _controller,
               decoration: const InputDecoration(
                 border: OutlineInputBorder(),
-                labelText: 'Type equation here: ',
+                labelText: 'Type equation here:',
               ),
             ),
             const SizedBox(height: 20),
             ElevatedButton(
-              onPressed: _updateText,
+              onPressed: _goToNewPage,
               child: const Text('Enter'),
             ),
             const SizedBox(height: 20),
-            
-             
-            Text(
+            const Text(
               'Or',
-              style: const TextStyle(fontSize: 22),
-            ),
-            const SizedBox(height: 40, width: 50),
-            ElevatedButton(
-              onPressed: _updatePicture,
-              child: const Text('Upload picture of equation here'),
+              style: TextStyle(fontSize: 22),
             ),
             const SizedBox(height: 20),
-
-    if (_equationWidget != null) _equationWidget!,
+            ElevatedButton(
+              child: const Text('Upload picture of equation here'),
+              onPressed: _pickImage,
+            ),
+            const SizedBox(height: 20),
+            if (selectedMedia != null) ...[
+              Image.file(selectedMedia!, width: 200),
+              const SizedBox(height: 10),
+              Text(
+                extractedText.isEmpty
+                    ? "Extracting text..."
+                    : "Detected: $extractedText",
+                style: const TextStyle(fontSize: 18),
+                textAlign: TextAlign.center,
+              ),
+            ],
           ],
         ),
       ),
@@ -185,5 +211,21 @@ class _TextBoxExampleState extends State<TextBoxExample> {
   }
 }
 
+class EquationPage extends StatelessWidget {
+  final String equation;
 
+  const EquationPage({super.key, required this.equation});
 
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text("Your Equation")),
+      body: Center(
+        child: Padding(
+          padding: const EdgeInsets.all(16.0),
+          child: findThings(equation),
+        ),
+      ),
+    );
+  }
+}
