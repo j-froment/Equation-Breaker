@@ -3,18 +3,23 @@ import 'package:flutter/material.dart';
 import 'package:gallery_picker/gallery_picker.dart';
 import 'package:google_mlkit_text_recognition/google_mlkit_text_recognition.dart';
 
+
 void main() {
   runApp(const MyApp());
 }
 
+
 Widget findThings(String equation) {
+   equation = equation.replaceAll(' ', '');
   var left = "";
   var right = "";
+
 
   List<int> xvalleft = [];
   List<int> constantsleft = [];
   List<int> xvalright = [];
   List<int> constantsright = [];
+
 
   for (var i = 0; i < equation.length; i++) {
     if (equation[i] == '=') {
@@ -24,15 +29,19 @@ Widget findThings(String equation) {
     }
   }
 
+
   int j = 0;
   while (j < left.length) {
-    if (isNumeric(left[j])) {
+    if (isNumeric(left[j]) || (left[j] == '-' && j + 1 < left.length && isNumeric(left[j + 1]))) {
       List<int> addval = [j];
       int check = 1;
+
+
       while (j + check < left.length && isNumeric(left[j + check])) {
         addval.add(j + check);
         check++;
       }
+
 
       if (j + check < left.length && left[j + check] == 'x') {
         xvalleft.addAll(addval);
@@ -40,21 +49,26 @@ Widget findThings(String equation) {
         constantsleft.addAll(addval);
       }
 
+
       j += check;
     } else {
       j++;
     }
   }
 
+
   int i = 0;
   while (i < right.length) {
-    if (isNumeric(right[i])) {
+    if (isNumeric(right[i]) || (right[i] == '-' && i + 1 < right.length && isNumeric(right[i + 1]))) {
       List<int> addval = [i];
       int check = 1;
+
+
       while (i + check < right.length && isNumeric(right[i + check])) {
         addval.add(i + check);
         check++;
       }
+
 
       if (i + check < right.length && right[i + check] == 'x') {
         xvalright.addAll(addval);
@@ -62,16 +76,20 @@ Widget findThings(String equation) {
         constantsright.addAll(addval);
       }
 
+
       i += check;
     } else {
       i++;
     }
   }
 
+
   List<InlineSpan> spans = [];
+
 
   for (var k = 0; k < equation.length; k++) {
     TextStyle style = const TextStyle(color: Colors.black);
+
 
     if (k < left.length) {
       if (xvalleft.contains(k)) {
@@ -88,20 +106,27 @@ Widget findThings(String equation) {
       }
     }
 
+
     spans.add(TextSpan(text: equation[k], style: style));
   }
+
 
   return RichText(
     text: TextSpan(children: spans, style: const TextStyle(fontSize: 24)),
   );
 }
 
+
+
+
 bool isNumeric(String s) {
   return double.tryParse(s) != null;
 }
 
+
 class MyApp extends StatelessWidget {
   const MyApp({super.key});
+
 
   @override
   Widget build(BuildContext context) {
@@ -115,17 +140,21 @@ class MyApp extends StatelessWidget {
   }
 }
 
+
 class TextBoxExample extends StatefulWidget {
   const TextBoxExample({super.key});
+
 
   @override
   State<TextBoxExample> createState() => _TextBoxExampleState();
 }
 
+
 class _TextBoxExampleState extends State<TextBoxExample> {
   final TextEditingController _controller = TextEditingController();
   File? selectedMedia;
   String extractedText = "";
+
 
   void _goToNewPage() {
     String equation = _controller.text;
@@ -136,6 +165,7 @@ class _TextBoxExampleState extends State<TextBoxExample> {
       ),
     );
   }
+
 
   Future<void> _pickImage() async {
     List<MediaFile>? media =
@@ -149,6 +179,7 @@ class _TextBoxExampleState extends State<TextBoxExample> {
     }
   }
 
+
   Future<void> _extractTextFromImage(File file) async {
     final textRecognizer = TextRecognizer(script: TextRecognitionScript.latin);
     final inputImage = InputImage.fromFile(file);
@@ -156,11 +187,13 @@ class _TextBoxExampleState extends State<TextBoxExample> {
         await textRecognizer.processImage(inputImage);
     textRecognizer.close();
 
+
     setState(() {
       extractedText = recognizedText.text;
       _controller.text = extractedText;
     });
   }
+
 
   @override
   Widget build(BuildContext context) {
@@ -211,21 +244,44 @@ class _TextBoxExampleState extends State<TextBoxExample> {
   }
 }
 
+
 class EquationPage extends StatelessWidget {
   final String equation;
 
+
   const EquationPage({super.key, required this.equation});
 
+
   @override
-  Widget build(BuildContext context) {
+   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text("Your Equation")),
+      appBar: AppBar(title: const Text("Solving")),
       body: Center(
         child: Padding(
           padding: const EdgeInsets.all(16.0),
-          child: findThings(equation),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+             
+              const SizedBox(height: 40),
+              findThings(equation),
+              const Text(
+                ' ',
+                style: TextStyle(fontSize: 30),
+              ),
+              const Text(
+                'Step one:',
+                style: TextStyle(fontSize: 20),
+              ),
+              const Text(
+                'Add all the orange numbers on the right side together. Then subtract the orange numbers on the left side from that sum.',
+                style: TextStyle(fontSize: 15),
+              ),
+            ],
+          ),
         ),
       ),
     );
   }
 }
+
