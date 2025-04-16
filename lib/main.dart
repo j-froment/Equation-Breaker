@@ -43,7 +43,7 @@ Widget findThings(String equation) {
       }
 
 
-      if (j + check < left.length && left[j + check] == 'x') {
+      if (j + check < left.length && isLetter(left[j + check])) { 
         xvalleft.addAll(addval);
       } else {
         constantsleft.addAll(addval);
@@ -70,7 +70,7 @@ Widget findThings(String equation) {
       }
 
 
-      if (i + check < right.length && right[i + check] == 'x') {
+      if (i + check < right.length && isLetter(right[i + check])) { 
         xvalright.addAll(addval);
       } else {
         constantsright.addAll(addval);
@@ -121,6 +121,12 @@ Widget findThings(String equation) {
 
 bool isNumeric(String s) {
   return double.tryParse(s) != null;
+}
+
+bool isLetter(String s) {
+  if (s.length != 1) return false;
+  int codeUnit = s.codeUnitAt(0);
+  return (codeUnit >= 65 && codeUnit <= 90) || (codeUnit >= 97 && codeUnit <= 122); // A-Z or a-z
 }
 
 
