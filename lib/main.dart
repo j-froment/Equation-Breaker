@@ -3,7 +3,10 @@ import 'package:flutter/material.dart';
 import 'package:gallery_picker/gallery_picker.dart';
 import 'package:google_mlkit_text_recognition/google_mlkit_text_recognition.dart';
 
-
+  List<int> xvalleft = [];
+  List<int> constantsleft = [];
+  List<int> xvalright = [];
+  List<int> constantsright = [];
 void main() {
   runApp(const MyApp());
 }
@@ -15,10 +18,7 @@ Widget findThings(String equation) {
   var right = "";
 
 
-  List<int> xvalleft = [];
-  List<int> constantsleft = [];
-  List<int> xvalright = [];
-  List<int> constantsright = [];
+
 
 
   for (var i = 0; i < equation.length; i++) {
@@ -140,7 +140,7 @@ class MyApp extends StatelessWidget {
       theme: ThemeData(
         scaffoldBackgroundColor: const Color.fromARGB(255, 230, 249, 205),
       ),
-      title: 'Dysculia Guiding App',
+      title: 'Dysculia more like DysNuts',
       home: const TextBoxExample(),
     );
   }
@@ -251,30 +251,55 @@ class _TextBoxExampleState extends State<TextBoxExample> {
 }
 
 
-class EquationPage extends StatelessWidget {
+class EquationPage extends StatefulWidget {
   final String equation;
-
 
   const EquationPage({super.key, required this.equation});
 
+  @override
+  State<EquationPage> createState() => _EquationPageState();
+}
+
+class _EquationPageState extends State<EquationPage> {
+  final TextEditingController _answerController = TextEditingController();
+
+  int getSum(List<int> indexes, String side) {
+    int sum = 0;
+    String text = side == "left"
+        ? widget.equation.split("=")[0]
+        : widget.equation.split("=")[1];
+    for (int i in indexes) {
+      StringBuffer number = StringBuffer();
+      // Build the number backward until you reach non-numeric
+      while (i >= 0 && isNumeric(text[i])) {
+        number.write(text[i]);
+        i--;
+      }
+      // Reverse it because we added backwards
+      String value = number.toString().split('').reversed.join('');
+      if (value.isNotEmpty) {
+        sum += int.tryParse(value) ?? 0;
+      }
+    }
+    return sum;
+  }
 
   @override
-   Widget build(BuildContext context) {
+  Widget build(BuildContext context) {
+    int rightSum = getSum(constantsright, "right");
+    int leftSum = getSum(constantsleft, "left");
+    int total = rightSum - leftSum;
+
     return Scaffold(
-      appBar: AppBar(title: const Text("Solving")),
+      appBar: AppBar(title: const Text("Solver")),
       body: Center(
         child: Padding(
           padding: const EdgeInsets.all(16.0),
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-             
+              findThings(widget.equation),
               const SizedBox(height: 40),
-              findThings(equation),
-              const Text(
-                ' ',
-                style: TextStyle(fontSize: 30),
-              ),
               const Text(
                 'Step one:',
                 style: TextStyle(fontSize: 20),
@@ -283,6 +308,23 @@ class EquationPage extends StatelessWidget {
                 'Add all the orange numbers on the right side together. Then subtract the orange numbers on the left side from that sum.',
                 style: TextStyle(fontSize: 15),
               ),
+              const SizedBox(height: 20),
+              Text(
+                "$rightSum - $leftSum = ",
+                style: const TextStyle(fontSize: 26),
+              ),
+              const SizedBox(height: 10),
+              SizedBox(
+                width: 100,
+                child: TextField(
+                  controller: _answerController,
+                  keyboardType: TextInputType.number,
+                  decoration: const InputDecoration(
+                    hintText: '?',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+              ),
             ],
           ),
         ),
@@ -290,4 +332,5 @@ class EquationPage extends StatelessWidget {
     );
   }
 }
+
 
