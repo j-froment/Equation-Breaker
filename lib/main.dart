@@ -3,23 +3,29 @@ import 'package:flutter/material.dart';
 import 'package:gallery_picker/gallery_picker.dart';
 import 'package:google_mlkit_text_recognition/google_mlkit_text_recognition.dart';
 
-  List<int> xvalleft = [];
-  List<int> constantsleft = [];
-  List<int> xvalright = [];
-  List<int> constantsright = [];
+List<int> xvalleft = [];
+List<int> constantsleft = [];
+List<int> xvalright = [];
+List<int> constantsright = [];
+
+List<String> constantsleftValues = [];
+List<String> constantsrightValues = [];
+
 void main() {
   runApp(const MyApp());
 }
 
-
 Widget findThings(String equation) {
-   equation = equation.replaceAll(' ', '');
+  xvalleft.clear();
+  constantsleft.clear();
+  xvalright.clear();
+  constantsright.clear();
+  constantsleftValues.clear();
+  constantsrightValues.clear();
+
+  equation = equation.replaceAll(' ', '');
   var left = "";
   var right = "";
-
-
-
-
 
   for (var i = 0; i < equation.length; i++) {
     if (equation[i] == '=') {
@@ -29,26 +35,24 @@ Widget findThings(String equation) {
     }
   }
 
-
   int j = 0;
   while (j < left.length) {
     if (isNumeric(left[j]) || (left[j] == '-' && j + 1 < left.length && isNumeric(left[j + 1]))) {
       List<int> addval = [j];
       int check = 1;
 
-
       while (j + check < left.length && isNumeric(left[j + check])) {
         addval.add(j + check);
         check++;
       }
 
-
-      if (j + check < left.length && isLetter(left[j + check])) { 
+      if (j + check < left.length && isLetter(left[j + check])) {
         xvalleft.addAll(addval);
       } else {
         constantsleft.addAll(addval);
+        String number = addval.map((index) => left[index]).join();
+        constantsleftValues.add(number);
       }
-
 
       j += check;
     } else {
@@ -56,26 +60,24 @@ Widget findThings(String equation) {
     }
   }
 
-
   int i = 0;
   while (i < right.length) {
     if (isNumeric(right[i]) || (right[i] == '-' && i + 1 < right.length && isNumeric(right[i + 1]))) {
       List<int> addval = [i];
       int check = 1;
 
-
       while (i + check < right.length && isNumeric(right[i + check])) {
         addval.add(i + check);
         check++;
       }
 
-
-      if (i + check < right.length && isLetter(right[i + check])) { 
+      if (i + check < right.length && isLetter(right[i + check])) {
         xvalright.addAll(addval);
       } else {
         constantsright.addAll(addval);
+        String number = addval.map((index) => right[index]).join();
+        constantsrightValues.add(number);
       }
-
 
       i += check;
     } else {
@@ -83,13 +85,10 @@ Widget findThings(String equation) {
     }
   }
 
-
   List<InlineSpan> spans = [];
-
 
   for (var k = 0; k < equation.length; k++) {
     TextStyle style = const TextStyle(color: Colors.black);
-
 
     if (k < left.length) {
       if (xvalleft.contains(k)) {
@@ -106,18 +105,13 @@ Widget findThings(String equation) {
       }
     }
 
-
     spans.add(TextSpan(text: equation[k], style: style));
   }
-
 
   return RichText(
     text: TextSpan(children: spans, style: const TextStyle(fontSize: 24)),
   );
 }
-
-
-
 
 bool isNumeric(String s) {
   return double.tryParse(s) != null;
@@ -126,13 +120,11 @@ bool isNumeric(String s) {
 bool isLetter(String s) {
   if (s.length != 1) return false;
   int codeUnit = s.codeUnitAt(0);
-  return (codeUnit >= 65 && codeUnit <= 90) || (codeUnit >= 97 && codeUnit <= 122); // A-Z or a-z
+  return (codeUnit >= 65 && codeUnit <= 90) || (codeUnit >= 97 && codeUnit <= 122);
 }
-
 
 class MyApp extends StatelessWidget {
   const MyApp({super.key});
-
 
   @override
   Widget build(BuildContext context) {
@@ -146,21 +138,17 @@ class MyApp extends StatelessWidget {
   }
 }
 
-
 class TextBoxExample extends StatefulWidget {
   const TextBoxExample({super.key});
-
 
   @override
   State<TextBoxExample> createState() => _TextBoxExampleState();
 }
 
-
 class _TextBoxExampleState extends State<TextBoxExample> {
   final TextEditingController _controller = TextEditingController();
   File? selectedMedia;
   String extractedText = "";
-
 
   void _goToNewPage() {
     String equation = _controller.text;
@@ -172,10 +160,8 @@ class _TextBoxExampleState extends State<TextBoxExample> {
     );
   }
 
-
   Future<void> _pickImage() async {
-    List<MediaFile>? media =
-        await GalleryPicker.pickMedia(context: context, singleMedia: true);
+    List<MediaFile>? media = await GalleryPicker.pickMedia(context: context, singleMedia: true);
     if (media != null && media.isNotEmpty) {
       var data = await media.first.getFile();
       setState(() {
@@ -185,21 +171,17 @@ class _TextBoxExampleState extends State<TextBoxExample> {
     }
   }
 
-
   Future<void> _extractTextFromImage(File file) async {
     final textRecognizer = TextRecognizer(script: TextRecognitionScript.latin);
     final inputImage = InputImage.fromFile(file);
-    final RecognizedText recognizedText =
-        await textRecognizer.processImage(inputImage);
+    final RecognizedText recognizedText = await textRecognizer.processImage(inputImage);
     textRecognizer.close();
-
 
     setState(() {
       extractedText = recognizedText.text;
       _controller.text = extractedText;
     });
   }
-
 
   @override
   Widget build(BuildContext context) {
@@ -222,10 +204,7 @@ class _TextBoxExampleState extends State<TextBoxExample> {
               child: const Text('Enter'),
             ),
             const SizedBox(height: 20),
-            const Text(
-              'Or',
-              style: TextStyle(fontSize: 22),
-            ),
+            const Text('Or', style: TextStyle(fontSize: 22)),
             const SizedBox(height: 20),
             ElevatedButton(
               child: const Text('Upload picture of equation here'),
@@ -236,9 +215,7 @@ class _TextBoxExampleState extends State<TextBoxExample> {
               Image.file(selectedMedia!, width: 200),
               const SizedBox(height: 10),
               Text(
-                extractedText.isEmpty
-                    ? "Extracting text..."
-                    : "Detected: $extractedText",
+                extractedText.isEmpty ? "Extracting text..." : "Detected: $extractedText",
                 style: const TextStyle(fontSize: 18),
                 textAlign: TextAlign.center,
               ),
@@ -249,7 +226,6 @@ class _TextBoxExampleState extends State<TextBoxExample> {
     );
   }
 }
-
 
 class EquationPage extends StatefulWidget {
   final String equation;
@@ -263,32 +239,24 @@ class EquationPage extends StatefulWidget {
 class _EquationPageState extends State<EquationPage> {
   final TextEditingController _answerController = TextEditingController();
 
-  int getSum(List<int> indexes, String side) {
-    int sum = 0;
-    String text = side == "left"
-        ? widget.equation.split("=")[0]
-        : widget.equation.split("=")[1];
-    for (int i in indexes) {
-      StringBuffer number = StringBuffer();
-      // Build the number backward until you reach non-numeric
-      while (i >= 0 && isNumeric(text[i])) {
-        number.write(text[i]);
-        i--;
-      }
-      // Reverse it because we added backwards
-      String value = number.toString().split('').reversed.join('');
-      if (value.isNotEmpty) {
-        sum += int.tryParse(value) ?? 0;
-      }
-    }
-    return sum;
+  int getSum(List<String> values) {
+    return values.fold(0, (sum, val) => sum + (int.tryParse(val) ?? 0));
   }
 
   @override
   Widget build(BuildContext context) {
-    int rightSum = getSum(constantsright, "right");
-    int leftSum = getSum(constantsleft, "left");
-    int total = rightSum - leftSum;
+    findThings(widget.equation);
+
+    int rightSum = getSum(constantsrightValues);
+    int leftSum = getSum(constantsleftValues);
+
+    String breakdown = constantsrightValues.join(' + ');
+    if (constantsleftValues.isNotEmpty) {
+      for (var val in constantsleftValues) {
+        breakdown += ' - $val';
+      }
+    }
+    breakdown += ' = ?';
 
     return Scaffold(
       appBar: AppBar(title: const Text("Solver")),
@@ -310,8 +278,8 @@ class _EquationPageState extends State<EquationPage> {
               ),
               const SizedBox(height: 20),
               Text(
-                "$rightSum - $leftSum = ",
-                style: const TextStyle(fontSize: 26),
+                breakdown,
+                style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
               ),
               const SizedBox(height: 10),
               SizedBox(
@@ -332,5 +300,3 @@ class _EquationPageState extends State<EquationPage> {
     );
   }
 }
-
-
