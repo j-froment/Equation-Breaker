@@ -140,7 +140,7 @@ class MyApp extends StatelessWidget {
       theme: ThemeData(
         scaffoldBackgroundColor: const Color.fromARGB(255, 230, 249, 205),
       ),
-      title: 'Dysculia more like DysNuts',
+      title: 'Dycalculating equations',
       home: const TextBoxExample(),
     );
   }
