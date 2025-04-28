@@ -239,16 +239,16 @@ class EquationPage extends StatefulWidget {
 class _EquationPageState extends State<EquationPage> {
   final TextEditingController _answerController = TextEditingController();
 
-  int getSum(List<String> values) {
+ /** int getSum(List<String> values) {
     return values.fold(0, (sum, val) => sum + (int.tryParse(val) ?? 0));
-  }
+  }*/
 
   @override
   Widget build(BuildContext context) {
     findThings(widget.equation);
 
-    int rightSum = getSum(constantsrightValues);
-    int leftSum = getSum(constantsleftValues);
+   /**  int rightSum = getSum(constantsrightValues);*/
+   /** int leftSum = getSum(constantsleftValues);*/
 
     String breakdown = constantsrightValues.join(' + ');
     if (constantsleftValues.isNotEmpty) {
@@ -256,7 +256,7 @@ class _EquationPageState extends State<EquationPage> {
         breakdown += ' - $val';
       }
     }
-    breakdown += ' = ?';
+    breakdown += ' = ';
 
     return Scaffold(
       appBar: AppBar(title: const Text("Solver")),
@@ -274,12 +274,12 @@ class _EquationPageState extends State<EquationPage> {
               ),
               const Text(
                 'Add all the orange numbers on the right side together. Then subtract the orange numbers on the left side from that sum.',
-                style: TextStyle(fontSize: 15),
+                style: TextStyle(fontSize: 10),
               ),
               const SizedBox(height: 20),
               Text(
                 breakdown,
-                style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+                style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold,color: Color.fromARGB(255, 255, 149, 0)),
               ),
               const SizedBox(height: 10),
               SizedBox(
