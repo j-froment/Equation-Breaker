@@ -122,7 +122,7 @@ class MyApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       theme: ThemeData(
-        scaffoldBackgroundColor: const Color.fromARGB(255, 230, 249, 205),
+        scaffoldBackgroundColor: const Color.fromARGB(255, 255, 255, 255),
       ),
       title: 'Dycalculating equations',
       home: const TextBoxExample(),
@@ -178,7 +178,9 @@ class _TextBoxExampleState extends State<TextBoxExample> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Enter Your Equation:')),
+      appBar: AppBar(
+        title: const Text('Enter Your Equation:'),
+        backgroundColor: Colors.purple,),
       body: Padding(
         padding: const EdgeInsets.all(16.0),
         child: Column(
@@ -273,7 +275,7 @@ class _EquationPageState extends State<EquationPage> {
     breakdown += ' = ';
 
     return Scaffold(
-      appBar: AppBar(title: const Text("Solver")),
+      appBar: AppBar(title: const Text("Step One")),
       body: Center(
         child: Padding(
           padding: const EdgeInsets.all(16.0),
@@ -324,6 +326,7 @@ class StepTwoPage extends StatelessWidget {
   final String equation;
   const StepTwoPage({super.key, required this.equation});
 
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -352,8 +355,24 @@ class StepTwoPage extends StatelessWidget {
               ),
               
               const SizedBox(height: 20),
-              // You can add another input field here if you want
-            ],
+const SizedBox(height: 10),
+              SizedBox(
+                width: 100,
+                child: TextField(
+                  //controller: _answerController,
+                  keyboardType: TextInputType.number,
+                  decoration: const InputDecoration(
+                    hintText: '?',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 20),
+              //ElevatedButton(
+                //onPressed: checkAnswer,
+                //child: const Text('Check Answer'),
+             // ),          
+               ],
           ),
         ),
       ),
