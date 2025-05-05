@@ -10,7 +10,8 @@ List<int> constantsright = [];
 
 List<String> constantsleftValues = [];
 List<String> constantsrightValues = [];
-
+List<String> xvalleftValues = [];
+List<String> xvalrightValues = [];
 
 void main() {
  runApp(const MyApp());
@@ -18,101 +19,122 @@ void main() {
 
 
 Widget findThings(String equation) {
- xvalleft.clear();
- constantsleft.clear();
- xvalright.clear();
- constantsright.clear();
- constantsleftValues.clear();
- constantsrightValues.clear();
+  xvalleft.clear();
+  constantsleft.clear();
+  xvalright.clear();
+  constantsright.clear();
+  constantsleftValues.clear();
+  constantsrightValues.clear();
+  xvalleftValues.clear();
+  xvalrightValues.clear();
 
+  equation = equation.replaceAll(' ', '');
+  var left = "", right = "";
 
- equation = equation.replaceAll(' ', '');
- var left = "";
- var right = "";
+  for (var i = 0; i < equation.length; i++) {
+    if (equation[i] == '=') {
+      left = equation.substring(0, i);
+      right = equation.substring(i + 1);
+      break;
+    }
+  }
 
+  // LEFT SIDE
+  int j = 0;
+  while (j < left.length) {
+    if (isNumeric(left[j]) || (left[j] == '-' && j + 1 < left.length && isNumeric(left[j + 1]))) {
+      List<int> addval = [j];
+      int check = 1;
+      while (j + check < left.length && isNumeric(left[j + check])) {
+        addval.add(j + check);
+        check++;
+      }
+      if (j + check < left.length && isLetter(left[j + check])) {
+        xvalleft.addAll(addval);
+        xvalleft.add(j + check); // include the variable character (like 'x')
+        String coeff = addval.map((index) => left[index]).join();
+        xvalleftValues.add(coeff);
+        j += check + 1;
+      } else {
+        constantsleft.addAll(addval);
+        String number = addval.map((index) => left[index]).join();
+        constantsleftValues.add(number);
+        j += check;
+      }
+    } else if (isLetter(left[j])) {
+      xvalleft.add(j);
+      xvalleftValues.add("1");
+      j++;
+    } else if (left[j] == '-' && j + 1 < left.length && isLetter(left[j + 1])) {
+      xvalleft.addAll([j, j + 1]);
+      xvalleftValues.add("-1");
+      j += 2;
+    } else {
+      j++;
+    }
+  }
 
- for (var i = 0; i < equation.length; i++) {
-   if (equation[i] == '=') {
-     left = equation.substring(0, i);
-     right = equation.substring(i + 1);
-     break;
-   }
- }
+  // RIGHT SIDE
+  int i = 0;
+  while (i < right.length) {
+    if (isNumeric(right[i]) || (right[i] == '-' && i + 1 < right.length && isNumeric(right[i + 1]))) {
+      List<int> addval = [i];
+      int check = 1;
+      while (i + check < right.length && isNumeric(right[i + check])) {
+        addval.add(i + check);
+        check++;
+      }
+      if (i + check < right.length && isLetter(right[i + check])) {
+        xvalright.addAll(addval);
+        xvalright.add(i + check); // include variable character
+        String coeff = addval.map((index) => right[index]).join();
+        xvalrightValues.add(coeff);
+        i += check + 1;
+      } else {
+        constantsright.addAll(addval);
+        String number = addval.map((index) => right[index]).join();
+        constantsrightValues.add(number);
+        i += check;
+      }
+    } else if (isLetter(right[i])) {
+      xvalright.add(i);
+      xvalrightValues.add("1");
+      i++;
+    } else if (right[i] == '-' && i + 1 < right.length && isLetter(right[i + 1])) {
+      xvalright.addAll([i, i + 1]);
+      xvalrightValues.add("-1");
+      i += 2;
+    } else {
+      i++;
+    }
+  }
 
+  // Coloring logic
+  List<InlineSpan> spans = [];
+  for (var k = 0; k < equation.length; k++) {
+    TextStyle style = const TextStyle(color: Colors.black);
+    if (k < left.length) {
+      if (xvalleft.contains(k)) {
+        style = const TextStyle(color: Colors.blue);
+      } else if (constantsleft.contains(k)) {
+        style = const TextStyle(color: Color.fromARGB(255, 255, 149, 0));
+      }
+    } else if (k > left.length) {
+      int rightIndex = k - (left.length + 1);
+      if (xvalright.contains(rightIndex)) {
+        style = const TextStyle(color: Colors.blue);
+      } else if (constantsright.contains(rightIndex)) {
+        style = const TextStyle(color: Color.fromARGB(255, 255, 149, 0));
+      }
+    }
+    spans.add(TextSpan(text: equation[k], style: style));
+  }
 
- int j = 0;
- while (j < left.length) {
-   if (isNumeric(left[j]) || (left[j] == '-' && j + 1 < left.length && isNumeric(left[j + 1]))) {
-     List<int> addval = [j];
-     int check = 1;
-     while (j + check < left.length && isNumeric(left[j + check])) {
-       addval.add(j + check);
-       check++;
-     }
-     if (j + check < left.length && isLetter(left[j + check])) {
-       xvalleft.addAll(addval);
-     } else {
-       constantsleft.addAll(addval);
-       String number = addval.map((index) => left[index]).join();
-       constantsleftValues.add(number);
-     }
-     j += check;
-   } else {
-     j++;
-   }
- }
-
-
- int i = 0;
- while (i < right.length) {
-   if (isNumeric(right[i]) || (right[i] == '-' && i + 1 < right.length && isNumeric(right[i + 1]))) {
-     List<int> addval = [i];
-     int check = 1;
-     while (i + check < right.length && isNumeric(right[i + check])) {
-       addval.add(i + check);
-       check++;
-     }
-     if (i + check < right.length && isLetter(right[i + check])) {
-       xvalright.addAll(addval);
-     } else {
-       constantsright.addAll(addval);
-       String number = addval.map((index) => right[index]).join();
-       constantsrightValues.add(number);
-     }
-     i += check;
-   } else {
-     i++;
-   }
- }
-
-
- List<InlineSpan> spans = [];
- for (var k = 0; k < equation.length; k++) {
-   TextStyle style = const TextStyle(color: Colors.black);
-
-
-   if (k < left.length) {
-     if (xvalleft.contains(k)) {
-       style = const TextStyle(color: Colors.blue);
-     } else if (constantsleft.contains(k)) {
-       style = const TextStyle(color: Color.fromARGB(255, 255, 149, 0));
-     }
-   } else if (k > left.length) {
-     int rightIndex = k - (left.length + 1);
-     if (xvalright.contains(rightIndex)) {
-       style = const TextStyle(color: Colors.blue);
-     } else if (constantsright.contains(rightIndex)) {
-       style = const TextStyle(color: Color.fromARGB(255, 255, 149, 0));
-     }
-   }
-   spans.add(TextSpan(text: equation[k], style: style));
- }
-
-
- return RichText(
-   text: TextSpan(children: spans, style: const TextStyle(fontSize: 24)),
- );
+  return RichText(
+    text: TextSpan(children: spans, style: const TextStyle(fontSize: 24)),
+  );
 }
+
 
 
 bool isNumeric(String s) {
@@ -326,106 +348,244 @@ class _EquationPageState extends State<EquationPage> {
 }
 
 
-class StepTwoPage extends StatelessWidget {
- final String equation;
- const StepTwoPage({super.key, required this.equation});
+class StepTwoPage extends StatefulWidget {
+  final String equation;
+
+  const StepTwoPage({super.key, required this.equation});
+
+  @override
+  State<StepTwoPage> createState() => _StepTwoPageState();
+}
+
+class _StepTwoPageState extends State<StepTwoPage> {
+  final TextEditingController _answerController = TextEditingController();
+  int correctAnswer = 0;
+
+  int getSum(List<String> values) {
+    return values.fold(0, (sum, val) => sum + (int.tryParse(val) ?? 0));
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    findThings(widget.equation);
+
+  int leftSum = getSum(xvalleftValues);
+int rightSum = getSum(xvalrightValues);
+correctAnswer = leftSum - rightSum;
+
+  }
+
+  String buildStep2Equation() {
+  String result = '';
+
+  for (int i = 0; i < xvalleftValues.length; i++) {
+    if (i != 0) result += ' + ';
+    result += xvalleftValues[i];
+  }
+
+  for (String val in xvalrightValues) {
+    result += ' - $val';
+  }
+
+  result += ' = ?';
+  return result;
+}
 
 
+  void checkAnswer() {
+    int? userAnswer = int.tryParse(_answerController.text);
+    if (userAnswer != null && userAnswer == correctAnswer) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Correct! ')),
+      );
+      // You can navigate to Step Three here if needed
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Incorrect, try again.')),
+      );
+    }
+  }
 
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Step Two'),
+        backgroundColor: Color.fromRGBO(236, 229, 243, 1),
+      ),
+      body: Center(
+        child: Padding(
+          padding: const EdgeInsets.all(16.0),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Text(
+                'Correct!',
+                style: TextStyle(
+                  fontSize: 24,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.green,
+                ),
+              ),
+              const SizedBox(height: 20),
+              const Text(
+                'Step two:',
+                style: TextStyle(fontSize: 20),
+              ),
+              const SizedBox(height: 20),
+              findThings(widget.equation),
+              const SizedBox(height: 20),
+              const Text(
+                'Add all the blue numbers on the left side together. Then subtract the blue numbers on the right side from that sum.',
+                textAlign: TextAlign.center,
+                style: TextStyle(fontSize: 15),
+              ),
+              const SizedBox(height: 20),
+              Text(
+                buildStep2Equation(),
+                style: const TextStyle(
+                  fontSize: 24,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.blue,
+                ),
+              ),
+              const SizedBox(height: 20),
+              SizedBox(
+                width: 100,
+                child: TextField(
+                  controller: _answerController,
+                  keyboardType: TextInputType.number,
+                  decoration: const InputDecoration(
+                    hintText: '?',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 20),
+              ElevatedButton(
+                onPressed: checkAnswer,
+                child: const Text('Check Answer'),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
 
- @override
- Widget build(BuildContext context) {
-   return Scaffold(
-     appBar: AppBar(title: const Text('Step Two'),
-           backgroundColor: Color.fromRGBO(236,229,243,1)),
+class StepThreePage extends StatefulWidget {
+  final String equation;
+  const StepThreePage({super.key, required this.equation});
 
-     body: Center(
-       child: Padding(
-         padding: const EdgeInsets.all(16.0),
-         child: Column(
-           mainAxisAlignment: MainAxisAlignment.center,
-           children: [
-             const Text(
-               'Correct!',
-               style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Colors.green),
-             ),
-             const SizedBox(height: 20),
-             const Text(
-               'Step two:',
-               style: TextStyle(fontSize: 20),
-             ),
-             const SizedBox(height: 20),
-             findThings(equation),
-             const Text(
-               'Add all the blue numbers on the left side together. Then subtract the orange numbers on the right side from that sum. ',
-               textAlign: TextAlign.center,
-               style: TextStyle(fontSize: 15),
-             ),
-            
-             const SizedBox(height: 20),
-const SizedBox(height: 10),
-             SizedBox(
-               width: 100,
-               child: TextField(
-                 //controller: _answerController,
-                 keyboardType: TextInputType.number,
-                 decoration: const InputDecoration(
-                   hintText: '?',
-                   border: OutlineInputBorder(),
-                 ),
-               ),
-             ),
-             const SizedBox(height: 20),
-             //ElevatedButton(
-               //onPressed: checkAnswer,
-               //child: const Text('Check Answer'),
-            // ),         
-              ],
-         ),
-       ),
-     ),
-   );
- }
- }
-class StepThreePage extends StatelessWidget {
- final String equation;
- const StepThreePage({super.key, required this.equation});
+  @override
+  State<StepThreePage> createState() => _StepThreePageState();
+}
 
+class _StepThreePageState extends State<StepThreePage> {
+  final TextEditingController _answerController = TextEditingController();
+  int correctAnswer = 0;
 
- @override
- Widget build(BuildContext context) {
-   return Scaffold(
-     appBar: AppBar(title: const Text('Step Two'),
-           backgroundColor: Color.fromRGBO(236,229,243,1)),
-     body: Center(
-       child: Padding(
-         padding: const EdgeInsets.all(16.0),
-         child: Column(
-           mainAxisAlignment: MainAxisAlignment.center,
-           children: [
-             const Text(
-               'Correct!',
-               style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Colors.green),
-             ),
-             const SizedBox(height: 20),
-             const Text(
-               'Step two:',
-               style: TextStyle(fontSize: 20),
-             ),
-             const SizedBox(height: 20),
-             findThings(equation),
-             const Text(
-               'Add all the blue numbers on the left side together. Then subtract the orange numbers on the right side from that sum. ',
-               textAlign: TextAlign.center,
-               style: TextStyle(fontSize: 15),
-             ),
-            
-             const SizedBox(height: 20),
-             // You can add another input field here if you want
-           ],
-         ),
-       ),
-     ),
-   );
- }
- }
+  int getSum(List<String> values) {
+    return values.fold(0, (sum, val) => sum + (int.tryParse(val) ?? 0));
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    findThings(widget.equation);
+    int leftSum = getSum(xvalrightValues );
+    int rightSum = getSum(xvalleftValues );
+    correctAnswer = leftSum - rightSum;
+  }
+
+  String buildStep3Equation() {
+    String result = '';
+
+    for (int i = 0; i < xvalleftValues.length; i++) {
+      if (i != 0) result += ' + ';
+      result += xvalrightValues[i];
+    }
+
+    for (String val in xvalrightValues) {
+      result += ' - $val';
+    }
+
+    result += ' = ?';
+    return result;
+  }
+
+  void checkAnswer() {
+    int? userAnswer = int.tryParse(_answerController.text);
+    if (userAnswer != null && userAnswer == correctAnswer) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Correct!')),
+      );
+      // You can navigate to Step Four here if needed
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Incorrect, try again.')),
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Step Three'),
+        backgroundColor: Color.fromRGBO(236, 229, 243, 1),
+      ),
+      body: Center(
+        child: Padding(
+          padding: const EdgeInsets.all(16.0),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              findThings(widget.equation),
+              const SizedBox(height: 20),
+              const Text(
+                'Step three:',
+                style: TextStyle(fontSize: 20),
+              ),
+              const SizedBox(height: 20),
+              const Text(
+                'Add all the blue numbers on the left side together. Then subtract the blue numbers on the right side from that sum.',
+                textAlign: TextAlign.center,
+                style: TextStyle(fontSize: 15),
+              ),
+              const SizedBox(height: 20),
+              // Display the constants-only breakdown
+              Text(
+                buildStep3Equation(),
+                style: const TextStyle(
+                  fontSize: 24,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.blue,
+                ),
+              ),
+              const SizedBox(height: 20),
+              SizedBox(
+                width: 100,
+                child: TextField(
+                  controller: _answerController,
+                  keyboardType: TextInputType.number,
+                  decoration: const InputDecoration(
+                    hintText: '?',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 20),
+              ElevatedButton(
+                onPressed: checkAnswer,
+                child: const Text('Check Answer'),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
