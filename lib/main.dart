@@ -400,11 +400,19 @@ correctAnswer = leftSum - rightSum;
         const SnackBar(content: Text('Correct! ')),
       );
       // You can navigate to Step Three here if needed
-    } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Incorrect, try again.')),
-      );
-    }
+    }if (userAnswer != null && userAnswer == correctAnswer) {
+  Navigator.push(
+    context,
+    MaterialPageRoute(
+      builder: (context) => StepThreePage(equation: widget.equation),
+    ),
+  );
+} else {
+  ScaffoldMessenger.of(context).showSnackBar(
+    const SnackBar(content: Text('Incorrect, try again.')),
+  );
+}
+
   }
 
   @override
@@ -491,39 +499,55 @@ class _StepThreePageState extends State<StepThreePage> {
     return values.fold(0, (sum, val) => sum + (int.tryParse(val) ?? 0));
   }
 
-  @override
-  void initState() {
-    super.initState();
-    findThings(widget.equation);
-    int leftSum = getSum(xvalrightValues );
-    int rightSum = getSum(xvalleftValues );
-    correctAnswer = leftSum - rightSum;
+ @override
+void initState() {
+  super.initState();
+  findThings(widget.equation);
+
+  // Step 1: constants sum
+  int step1Right = getSum(constantsrightValues);
+  int step1Left = getSum(constantsleftValues);
+  int step1Result = step1Right - step1Left;
+
+  // Step 2: x coefficient sum
+  int step2Left = getSum(xvalleftValues);
+  int step2Right = getSum(xvalrightValues);
+  int step2Result = step2Left - step2Right;
+
+  if (step2Result != 0) {
+    correctAnswer = (step1Result / step2Result).round(); // rounding for integer TextField
+  } else {
+    correctAnswer = 0; // or handle divide-by-zero more carefully if needed
   }
+}
+
 
   String buildStep3Equation() {
-    String result = '';
+  int step1Right = getSum(constantsrightValues);
+  int step1Left = getSum(constantsleftValues);
+  int step1Result = step1Right - step1Left;
 
-    for (int i = 0; i < xvalleftValues.length; i++) {
-      if (i != 0) result += ' + ';
-      result += xvalrightValues[i];
-    }
+  int step2Left = getSum(xvalleftValues);
+  int step2Right = getSum(xvalrightValues);
+  int step2Result = step2Left - step2Right;
 
-    for (String val in xvalrightValues) {
-      result += ' - $val';
-    }
+  return '$step1Result / $step2Result = ?';
+}
 
-    result += ' = ?';
-    return result;
-  }
 
   void checkAnswer() {
     int? userAnswer = int.tryParse(_answerController.text);
     if (userAnswer != null && userAnswer == correctAnswer) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Correct!')),
-      );
+  Navigator.push(
+    context,
+    MaterialPageRoute(
+      builder: (context) => FinalAnswerPage(finalAnswer: correctAnswer),
+    ),
+  );
+}
+
       // You can navigate to Step Four here if needed
-    } else {
+     else {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Incorrect, try again.')),
       );
@@ -551,7 +575,7 @@ class _StepThreePageState extends State<StepThreePage> {
               ),
               const SizedBox(height: 20),
               const Text(
-                'Add all the blue numbers on the left side together. Then subtract the blue numbers on the right side from that sum.',
+                'Divide the blue number by the orange number. The result is the value of x.',
                 textAlign: TextAlign.center,
                 style: TextStyle(fontSize: 15),
               ),
@@ -589,3 +613,26 @@ class _StepThreePageState extends State<StepThreePage> {
     );
   }
 }
+class FinalAnswerPage extends StatelessWidget {
+  final int finalAnswer;
+
+  const FinalAnswerPage({super.key, required this.finalAnswer});
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Result'),
+        backgroundColor: Color.fromRGBO(236, 229, 243, 1),
+      ),
+      body: Center(
+        child: Text(
+          'Correct, the answer is $finalAnswer',
+          style: const TextStyle(fontSize: 28, fontWeight: FontWeight.bold, color: Colors.green),
+          textAlign: TextAlign.center,
+        ),
+      ),
+    );
+  }
+}
+
