@@ -2,10 +2,14 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 
 
+
+
 List<int> xvalleft = [];
 List<int> constantsleft = [];
 List<int> xvalright = [];
 List<int> constantsright = [];
+
+
 
 
 List<String> constantsleftValues = [];
@@ -13,9 +17,12 @@ List<String> constantsrightValues = [];
 List<String> xvalleftValues = [];
 List<String> xvalrightValues = [];
 
+
 void main() {
  runApp(const MyApp());
 }
+
+
 
 
 Widget findThings(String equation) {
@@ -28,8 +35,10 @@ Widget findThings(String equation) {
   xvalleftValues.clear();
   xvalrightValues.clear();
 
+
   equation = equation.replaceAll(' ', '');
   var left = "", right = "";
+
 
   for (var i = 0; i < equation.length; i++) {
     if (equation[i] == '=') {
@@ -38,6 +47,7 @@ Widget findThings(String equation) {
       break;
     }
   }
+
 
   // LEFT SIDE
   int j = 0;
@@ -51,7 +61,7 @@ Widget findThings(String equation) {
       }
       if (j + check < left.length && isLetter(left[j + check])) {
         xvalleft.addAll(addval);
-        xvalleft.add(j + check); // include the variable character (like 'x')
+        xvalleft.add(j + check);
         String coeff = addval.map((index) => left[index]).join();
         xvalleftValues.add(coeff);
         j += check + 1;
@@ -74,6 +84,7 @@ Widget findThings(String equation) {
     }
   }
 
+
   // RIGHT SIDE
   int i = 0;
   while (i < right.length) {
@@ -86,7 +97,7 @@ Widget findThings(String equation) {
       }
       if (i + check < right.length && isLetter(right[i + check])) {
         xvalright.addAll(addval);
-        xvalright.add(i + check); // include variable character
+        xvalright.add(i + check);
         String coeff = addval.map((index) => right[index]).join();
         xvalrightValues.add(coeff);
         i += check + 1;
@@ -109,26 +120,76 @@ Widget findThings(String equation) {
     }
   }
 
-  // Coloring logic
+
+  // === FORMAT EQUATION WITH TERM SPACING ===
+  String formattedEquation = '';
+  final buffer = StringBuffer();
+
+
+  int k = 0;
+  while (k < equation.length) {
+    String char = equation[k];
+
+
+    if (char == '+' || char == '-' || char == '=') {
+      buffer.write('  $char  ');
+      k++;
+    } else {
+      // Capture full term like 5x or 10
+      String term = '';
+      while (k < equation.length && equation[k] != '+' && equation[k] != '-' && equation[k] != '=') {
+        term += equation[k];
+        k++;
+      }
+      buffer.write(term);
+    }
+  }
+
+
+  formattedEquation = buffer.toString();
+
+
+  // === COLORING BASED ON ORIGINAL INDEX ===
   List<InlineSpan> spans = [];
-  for (var k = 0; k < equation.length; k++) {
+  int rawIndex = 0;
+
+
+  for (int idx = 0; idx < formattedEquation.length; idx++) {
+    String char = formattedEquation[idx];
+
+
+    if (char == ' ') {
+      spans.add(const TextSpan(text: ' '));
+      continue;
+    }
+
+
     TextStyle style = const TextStyle(color: Colors.black);
-    if (k < left.length) {
-      if (xvalleft.contains(k)) {
+
+
+    if (rawIndex < left.length) {
+      if (xvalleft.contains(rawIndex)) {
         style = const TextStyle(color: Colors.blue);
-      } else if (constantsleft.contains(k)) {
+      } else if (constantsleft.contains(rawIndex)) {
         style = const TextStyle(color: Color.fromARGB(255, 255, 149, 0));
       }
-    } else if (k > left.length) {
-      int rightIndex = k - (left.length + 1);
+    } else if (rawIndex == left.length) {
+      // '=' character
+      style = const TextStyle(color: Colors.black);
+    } else {
+      int rightIndex = rawIndex - (left.length + 1);
       if (xvalright.contains(rightIndex)) {
         style = const TextStyle(color: Colors.blue);
       } else if (constantsright.contains(rightIndex)) {
         style = const TextStyle(color: Color.fromARGB(255, 255, 149, 0));
       }
     }
-    spans.add(TextSpan(text: equation[k], style: style));
+
+
+    spans.add(TextSpan(text: char, style: style));
+    rawIndex++;
   }
+
 
   return RichText(
     text: TextSpan(children: spans, style: const TextStyle(fontSize: 24)),
@@ -137,9 +198,48 @@ Widget findThings(String equation) {
 
 
 
+
+
+
+String addSpacesBetweenTerms(String eq) {
+  String result = '';
+  int i = 0;
+
+
+  while (i < eq.length) {
+    String char = eq[i];
+
+
+    if (char == '+' || char == '-' || char == '=') {
+      result += '  $char  ';
+      i++;
+    } else {
+      String term = '';
+      while (i < eq.length &&
+          eq[i] != '+' &&
+          eq[i] != '-' &&
+          eq[i] != '=') {
+        term += eq[i];
+        i++;
+      }
+      result += term;
+    }
+  }
+
+
+  return result.trim();
+}
+
+
+
+
+
+
 bool isNumeric(String s) {
  return double.tryParse(s) != null;
 }
+
+
 
 
 bool isLetter(String s) {
@@ -149,8 +249,12 @@ bool isLetter(String s) {
 }
 
 
+
+
 class MyApp extends StatelessWidget {
  const MyApp({super.key});
+
+
 
 
  @override
@@ -166,8 +270,12 @@ class MyApp extends StatelessWidget {
 }
 
 
+
+
 class TextBoxExample extends StatefulWidget {
  const TextBoxExample({super.key});
+
+
 
 
  @override
@@ -175,10 +283,14 @@ class TextBoxExample extends StatefulWidget {
 }
 
 
+
+
 class _TextBoxExampleState extends State<TextBoxExample> {
  final TextEditingController _controller = TextEditingController();
  File? selectedMedia;
  String extractedText = "";
+
+
 
 
  void _goToNewPage() {
@@ -194,12 +306,17 @@ class _TextBoxExampleState extends State<TextBoxExample> {
 
 
 
+
+
+
+
  @override
  Widget build(BuildContext context) {
    return Scaffold(
      appBar: AppBar(
        title: const Text('Enter Your Equation:'),
              backgroundColor: Color.fromRGBO(236,229,243,1)),
+
 
      body: Padding(
        padding: const EdgeInsets.all(16.0),
@@ -235,11 +352,17 @@ class _TextBoxExampleState extends State<TextBoxExample> {
 }
 
 
+
+
 class EquationPage extends StatefulWidget {
  final String equation;
 
 
+
+
  const EquationPage({super.key, required this.equation});
+
+
 
 
  @override
@@ -247,14 +370,20 @@ class EquationPage extends StatefulWidget {
 }
 
 
+
+
 class _EquationPageState extends State<EquationPage> {
  final TextEditingController _answerController = TextEditingController();
  int correctAnswer = 0;
 
 
+
+
  int getSum(List<String> values) {
    return values.fold(0, (sum, val) => sum + (int.tryParse(val) ?? 0));
  }
+
+
 
 
  @override
@@ -263,10 +392,14 @@ class _EquationPageState extends State<EquationPage> {
    findThings(widget.equation);
 
 
+
+
    int rightSum = getSum(constantsrightValues);
    int leftSum = getSum(constantsleftValues);
    correctAnswer = rightSum - leftSum;
  }
+
+
 
 
  void checkAnswer() {
@@ -286,6 +419,8 @@ class _EquationPageState extends State<EquationPage> {
  }
 
 
+
+
  @override
  Widget build(BuildContext context) {
    String breakdown = constantsrightValues.join(' + ');
@@ -297,9 +432,12 @@ class _EquationPageState extends State<EquationPage> {
    breakdown += ' = ';
 
 
+
+
    return Scaffold(
      appBar: AppBar(title: const Text("Step One"),
            backgroundColor: Color.fromRGBO(236,229,243,1)),
+
 
      body: Center(
        child: Padding(
@@ -348,49 +486,64 @@ class _EquationPageState extends State<EquationPage> {
 }
 
 
+
+
 class StepTwoPage extends StatefulWidget {
   final String equation;
 
+
   const StepTwoPage({super.key, required this.equation});
+
 
   @override
   State<StepTwoPage> createState() => _StepTwoPageState();
 }
 
+
 class _StepTwoPageState extends State<StepTwoPage> {
   final TextEditingController _answerController = TextEditingController();
   int correctAnswer = 0;
 
+
   int getSum(List<String> values) {
     return values.fold(0, (sum, val) => sum + (int.tryParse(val) ?? 0));
   }
+
 
   @override
   void initState() {
     super.initState();
     findThings(widget.equation);
 
+
   int leftSum = getSum(xvalleftValues);
 int rightSum = getSum(xvalrightValues);
 correctAnswer = leftSum - rightSum;
 
+
   }
+
 
   String buildStep2Equation() {
   String result = '';
+
 
   for (int i = 0; i < xvalleftValues.length; i++) {
     if (i != 0) result += ' + ';
     result += xvalleftValues[i];
   }
 
+
   for (String val in xvalrightValues) {
     result += ' - $val';
   }
 
+
   result += ' = ?';
   return result;
 }
+
+
 
 
   void checkAnswer() {
@@ -413,7 +566,9 @@ correctAnswer = leftSum - rightSum;
   );
 }
 
+
   }
+
 
   @override
   Widget build(BuildContext context) {
@@ -483,36 +638,44 @@ correctAnswer = leftSum - rightSum;
   }
 }
 
+
 class StepThreePage extends StatefulWidget {
   final String equation;
   const StepThreePage({super.key, required this.equation});
+
 
   @override
   State<StepThreePage> createState() => _StepThreePageState();
 }
 
+
 class _StepThreePageState extends State<StepThreePage> {
   final TextEditingController _answerController = TextEditingController();
   int correctAnswer = 0;
 
+
   int getSum(List<String> values) {
     return values.fold(0, (sum, val) => sum + (int.tryParse(val) ?? 0));
   }
+
 
  @override
 void initState() {
   super.initState();
   findThings(widget.equation);
 
+
   // Step 1: constants sum
   int step1Right = getSum(constantsrightValues);
   int step1Left = getSum(constantsleftValues);
   int step1Result = step1Right - step1Left;
 
+
   // Step 2: x coefficient sum
   int step2Left = getSum(xvalleftValues);
   int step2Right = getSum(xvalrightValues);
   int step2Result = step2Left - step2Right;
+
 
   if (step2Result != 0) {
     correctAnswer = (step1Result / step2Result).round(); // rounding for integer TextField
@@ -522,17 +685,23 @@ void initState() {
 }
 
 
+
+
   String buildStep3Equation() {
   int step1Right = getSum(constantsrightValues);
   int step1Left = getSum(constantsleftValues);
   int step1Result = step1Right - step1Left;
 
+
   int step2Left = getSum(xvalleftValues);
   int step2Right = getSum(xvalrightValues);
   int step2Result = step2Left - step2Right;
 
+
   return '$step1Result / $step2Result = ?';
 }
+
+
 
 
   void checkAnswer() {
@@ -546,6 +715,7 @@ void initState() {
   );
 }
 
+
       // You can navigate to Step Four here if needed
      else {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -553,6 +723,7 @@ void initState() {
       );
     }
   }
+
 
   @override
   Widget build(BuildContext context) {
@@ -616,7 +787,9 @@ void initState() {
 class FinalAnswerPage extends StatelessWidget {
   final int finalAnswer;
 
+
   const FinalAnswerPage({super.key, required this.finalAnswer});
+
 
   @override
   Widget build(BuildContext context) {
@@ -635,4 +808,10 @@ class FinalAnswerPage extends StatelessWidget {
     );
   }
 }
+
+
+
+
+
+
 
