@@ -445,12 +445,13 @@ class _EquationPageState extends State<EquationPage> {
          child: Column(
            mainAxisAlignment: MainAxisAlignment.center,
            children: [
+              const Text(
+                'Step one:',
+                style: TextStyle(fontSize: 20),
+              ),
              findThings(widget.equation),
-             const SizedBox(height: 40),
-             const Text(
-               'Step one:',
-               style: TextStyle(fontSize: 20),
-             ),
+            const SizedBox(height: 20),
+             
              const Text(
                'Add all the orange numbers on the right side together. Then subtract the orange numbers on the left side from that sum.',
                style: TextStyle(fontSize: 15),
@@ -738,13 +739,24 @@ void initState() {
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              findThings(widget.equation),
+              const Text(
+                'Correct!',
+                style: TextStyle(
+                  fontSize: 24,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.green,
+                ),
+              ),
               const SizedBox(height: 20),
+      
               const Text(
                 'Step three:',
                 style: TextStyle(fontSize: 20),
               ),
               const SizedBox(height: 20),
+              findThings(widget.equation),
+              const SizedBox(height: 20),
+              
               const Text(
                 'Divide the blue number by the orange number. The result is the value of x.',
                 textAlign: TextAlign.center,
