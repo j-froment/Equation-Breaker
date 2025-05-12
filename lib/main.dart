@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 
 
 
-
+//Global list variables declarations to store the x values and constants 
 List<int> xvalleft = [];
 List<int> constantsleft = [];
 List<int> xvalright = [];
@@ -24,8 +24,10 @@ void main() {
 
 
 
-
-Widget findThings(String equation) {
+/// Void findComponents Function to find x values and constants in the equation
+/// @parameter equation - input the string equation to be parsed
+/// @return Widget - returns a RichText widget with the equation formatted
+Widget findComponents(String equation) {
   xvalleft.clear();
   constantsleft.clear();
   xvalright.clear();
@@ -39,7 +41,9 @@ Widget findThings(String equation) {
   equation = equation.replaceAll(' ', '');
   var left = "", right = "";
 
-
+// Loop to find the x values and constants in the left side of the equation
+// Using the IsNumeric and IsLetter functions to check if the character is a number or a letter
+// If the character is a number, it is added to the  left constants list, if it is a letter, it is added to the left x values list
   for (var i = 0; i < equation.length; i++) {
     if (equation[i] == '=') {
       left = equation.substring(0, i);
@@ -86,6 +90,9 @@ Widget findThings(String equation) {
 
 
   // RIGHT SIDE
+  // Loop to find the x values and constants in the right side of the equation
+// Using the IsNumeric and IsLetter functions to check if the character is a number or a letter
+// If the character is a number, it is added to the right side constants list, if it is a letter, it is added to theright side x values list
   int i = 0;
   while (i < right.length) {
     if (isNumeric(right[i]) || (right[i] == '-' && i + 1 < right.length && isNumeric(right[i + 1]))) {
@@ -389,7 +396,7 @@ class _EquationPageState extends State<EquationPage> {
  @override
  void initState() {
    super.initState();
-   findThings(widget.equation);
+   findComponents(widget.equation);
 
 
 
@@ -449,7 +456,7 @@ class _EquationPageState extends State<EquationPage> {
                 'Step one:',
                 style: TextStyle(fontSize: 20),
               ),
-             findThings(widget.equation),
+             findComponents(widget.equation),
             const SizedBox(height: 20),
              
              const Text(
@@ -514,7 +521,7 @@ class _StepTwoPageState extends State<StepTwoPage> {
   @override
   void initState() {
     super.initState();
-    findThings(widget.equation);
+    findComponents(widget.equation);
 
 
   int leftSum = getSum(xvalleftValues);
@@ -598,7 +605,7 @@ correctAnswer = leftSum - rightSum;
                 style: TextStyle(fontSize: 20),
               ),
               const SizedBox(height: 20),
-              findThings(widget.equation),
+             findComponents(widget.equation),
               const SizedBox(height: 20),
               const Text(
                 'Add all the blue numbers on the left side together. Then subtract the blue numbers on the right side from that sum.',
@@ -663,7 +670,7 @@ class _StepThreePageState extends State<StepThreePage> {
  @override
 void initState() {
   super.initState();
-  findThings(widget.equation);
+ findComponents(widget.equation);
 
 
   // Step 1: constants sum
@@ -754,7 +761,7 @@ void initState() {
                 style: TextStyle(fontSize: 20),
               ),
               const SizedBox(height: 20),
-              findThings(widget.equation),
+             findComponents(widget.equation),
               const SizedBox(height: 20),
               
               const Text(

@@ -2,12 +2,7 @@
    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES"/>
   <uses-permission android:name="android.permission.READ_MEDIA_VIDEO"/>
-  <key>NSPhotoLibraryUsageDescription</key>
-   <string>Privacy - Photo Library Usage Description</string>
-   <key>NSMotionUsageDescription</key>
-   <string>Motion usage description</string>
-   <key>NSPhotoLibraryAddUsageDescription</key>
-   <string>NSPhotoLibraryAddUsageDescription</string>
+
    <application
        android:label="flutter_application_2"
        android:name="${applicationName}"
