@@ -341,7 +341,7 @@ class _TextBoxExampleState extends State<TextBoxExample> {
  Widget build(BuildContext context) {
    return Scaffold(
      appBar: AppBar(
-       title: const Text('Enter Your Equation (only supports interger values):'),
+       title: const Text('Enter a linear equation using only whole-number values'),
              backgroundColor: Color.fromRGBO(236,229,243,1)),
 
 
@@ -433,7 +433,7 @@ class _EquationPageState extends State<EquationPage> {
 
 
 
-/// Checks the user's submitted answer against the correct value.
+/// Checks the user's submitted answer against the correct value for Step 1.
 /// @param _answerController.text - the text input from the user.
 /// If correct, navigates to StepTwoPage. If incorrect, displays
 /// a SnackBar message prompting the user to try again.
@@ -559,7 +559,10 @@ correctAnswer = leftSum - rightSum;
 
   }
 
-
+// Function to build the equation string for Step 2
+// This function constructs a string representation of the equation
+// by summing the x coefficients on the left side and subtracting
+// the x coefficients on the right side.
   String buildStep2Equation() {
   String result = '';
 
@@ -581,7 +584,9 @@ correctAnswer = leftSum - rightSum;
 
 
 
-
+// Function to check the user's answer for Step 2
+// Validates the user's input against the correct answer.
+// If correct, navigates to StepThreePage. If incorrect, displays a SnackBar message.
   void checkAnswer() {
     int? userAnswer = int.tryParse(_answerController.text);
     if (userAnswer != null && userAnswer == correctAnswer) {
@@ -722,7 +727,9 @@ void initState() {
 
 
 
-
+// Function to build the equation string for Step 3
+// Constructs the equation for the final step by dividing the sum of constants
+// by the sum of x coefficients. This represents solving for x.
   String buildStep3Equation() {
   int step1Right = getSum(constantsrightValues);
   int step1Left = getSum(constantsleftValues);
@@ -739,7 +746,9 @@ void initState() {
 
 
 
-
+// Function to check the user's answer for Step 3
+// Validates the user's input against the correct answer.
+// If correct, navigates to FinalAnswerPage. If incorrect, displays a SnackBar message.
   void checkAnswer() {
     int? userAnswer = int.tryParse(_answerController.text);
     if (userAnswer != null && userAnswer == correctAnswer) {
