@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 
 
 
-//Global list variables declarations to store the x values and constants 
+// Global Lists to store character indices of x terms and constants on each side
 List<int> xvalleft = [];
 List<int> constantsleft = [];
 List<int> xvalright = [];
@@ -11,7 +11,7 @@ List<int> constantsright = [];
 
 
 
-
+// Global Lists to store string representations of extracted x terms and constants
 List<String> constantsleftValues = [];
 List<String> constantsrightValues = [];
 List<String> xvalleftValues = [];
@@ -24,9 +24,11 @@ void main() {
 
 
 
-/// Void findComponents Function to find x values and constants in the equation
-/// @parameter equation - input the string equation to be parsed
-/// @return Widget - returns a RichText widget with the equation formatted
+
+/// findComponents - Parses an algebraic equation to identify x terms and constants on both sides.
+/// It also colors x terms as blue and constants as orange.
+/// @param equation The input algebraic equation as a string.
+/// @return A RichText widget displaying the formatted equation.
 Widget findComponents(String equation) {
   xvalleft.clear();
   constantsleft.clear();
@@ -37,13 +39,15 @@ Widget findComponents(String equation) {
   xvalleftValues.clear();
   xvalrightValues.clear();
 
-
+  // Remove whitespace and split the equation into left and right sides
   equation = equation.replaceAll(' ', '');
   var left = "", right = "";
 
-// Loop to find the x values and constants in the left side of the equation
-// Using the IsNumeric and IsLetter functions to check if the character is a number or a letter
-// If the character is a number, it is added to the  left constants list, if it is a letter, it is added to the left x values list
+
+// Loop that scans the 'equation' string to find the first '=' character.
+// Once found, it splits the equation into two parts:
+// 'left' contains the substring before the '=', and
+// 'right' contains the substring after the '='.
   for (var i = 0; i < equation.length; i++) {
     if (equation[i] == '=') {
       left = equation.substring(0, i);
@@ -54,6 +58,12 @@ Widget findComponents(String equation) {
 
 
   // LEFT SIDE
+// This loop iterates through the left side of the equation (before '=').
+// It identifies constants and variable terms (i.e., "3", "-2x", "x") using helper functions:
+// - isNumeric(): checks if a character is a digit
+// - isLetter(): checks if a character is a letter
+// It stores the indices of the constants and variables in 'constantsleft' and 'xvalleft', respectively.
+// Their string values are stored in 'constantsleftValues' and 'xvalleftValues'.
   int j = 0;
   while (j < left.length) {
     if (isNumeric(left[j]) || (left[j] == '-' && j + 1 < left.length && isNumeric(left[j + 1]))) {
@@ -90,9 +100,12 @@ Widget findComponents(String equation) {
 
 
   // RIGHT SIDE
-  // Loop to find the x values and constants in the right side of the equation
-// Using the IsNumeric and IsLetter functions to check if the character is a number or a letter
-// If the character is a number, it is added to the right side constants list, if it is a letter, it is added to theright side x values list
+// This loop iterates through the right side of the equation (before '=').
+// It identifies constants and variable terms (i.e., "3", "-2x", "x") using helper functions:
+// - isNumeric(): checks if a character is a digit
+// - isLetter(): checks if a character is a letter
+// It stores the indices of the constants and variables in 'constantsright' and 'xvalright', respectively.
+// Their string values are stored in 'constantsrightValues' and 'xvalrightValues'.
   int i = 0;
   while (i < right.length) {
     if (isNumeric(right[i]) || (right[i] == '-' && i + 1 < right.length && isNumeric(right[i + 1]))) {
@@ -129,6 +142,9 @@ Widget findComponents(String equation) {
 
 
   // === FORMAT EQUATION WITH TERM SPACING ===
+// This part formats the 'raw' equation string by adding spacing around operators
+// like '+', '-', and '=' to improve readability. It also groups numbers and variables
+// together as individual terms (e.g., "5x" or "10") so they are treated as units.
   String formattedEquation = '';
   final buffer = StringBuffer();
 
@@ -138,11 +154,11 @@ Widget findComponents(String equation) {
     String char = equation[k];
 
 
-    if (char == '+' || char == '-' || char == '=') {
+    if (char == '+' || char == '-' || char == '=' ) {
       buffer.write('  $char  ');
       k++;
     } else {
-      // Capture full term like 5x or 10
+
       String term = '';
       while (k < equation.length && equation[k] != '+' && equation[k] != '-' && equation[k] != '=') {
         term += equation[k];
@@ -157,6 +173,10 @@ Widget findComponents(String equation) {
 
 
   // === COLORING BASED ON ORIGINAL INDEX ===
+  // Builds a styled version of the formatted equation by assigning colors
+// to variables (x terms) and constants based on their positions in the original equation.
+// It creates a List of TextSpan objects for syntax-style highlighting.
+
   List<InlineSpan> spans = [];
   int rawIndex = 0;
 
@@ -204,10 +224,10 @@ Widget findComponents(String equation) {
 }
 
 
-
-
-
-
+/// Adds spacing around operators (+, -, =) in an equation string
+/// to improve readability and separate terms like "5x" or "10".
+/// @param eq The 'raw' equation string to format.
+/// @return A string with spaces added between terms and operators.
 String addSpacesBetweenTerms(String eq) {
   String result = '';
   int i = 0;
@@ -241,14 +261,18 @@ String addSpacesBetweenTerms(String eq) {
 
 
 
-
+/// Checks if the given string is a valid number (integer or decimal)
+/// @param s The string to evaluate.
+/// @return True if the string can be parsed as a number, false otherwise.
 bool isNumeric(String s) {
  return double.tryParse(s) != null;
 }
 
 
 
-
+/// Checks if a single-character string is a letter (A-Z or a-z) using ASCII values.
+/// @param s The character to evaluate (should be length 1).
+/// @return True if the character is a letter, false otherwise.
 bool isLetter(String s) {
  if (s.length != 1) return false;
  int codeUnit = s.codeUnitAt(0);
@@ -309,10 +333,6 @@ class _TextBoxExampleState extends State<TextBoxExample> {
      ),
    );
  }
-
-
-
-
 
 
 
@@ -385,14 +405,19 @@ class _EquationPageState extends State<EquationPage> {
 
 
 
-
+// Function to calculate the sum of the constants on both sides of the equation
+// @parameter values - list of string values to be summed
+// @return the sum of the values in the list
  int getSum(List<String> values) {
    return values.fold(0, (sum, val) => sum + (int.tryParse(val) ?? 0));
  }
 
 
 
-
+/// Initializes the state of the widget and computes the correct answer
+/// by extracting and summing constants from both sides of the equation.
+/// The difference (rightSum - leftSum) is stored as the correct answer
+/// to be used for answer validation later.
  @override
  void initState() {
    super.initState();
@@ -408,7 +433,10 @@ class _EquationPageState extends State<EquationPage> {
 
 
 
-
+/// Checks the user's submitted answer against the correct value.
+/// @param _answerController.text - the text input from the user.
+/// If correct, navigates to StepTwoPage. If incorrect, displays
+/// a SnackBar message prompting the user to try again.
  void checkAnswer() {
    int? userAnswer = int.tryParse(_answerController.text);
    if (userAnswer != null && userAnswer == correctAnswer) {
@@ -560,7 +588,7 @@ correctAnswer = leftSum - rightSum;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Correct! ')),
       );
-      // You can navigate to Step Three here if needed
+      
     }if (userAnswer != null && userAnswer == correctAnswer) {
   Navigator.push(
     context,
@@ -724,7 +752,7 @@ void initState() {
 }
 
 
-      // You can navigate to Step Four here if needed
+      
      else {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Incorrect, try again.')),
