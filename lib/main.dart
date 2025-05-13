@@ -341,7 +341,7 @@ class _TextBoxExampleState extends State<TextBoxExample> {
  Widget build(BuildContext context) {
    return Scaffold(
      appBar: AppBar(
-       title: const Text('Enter Your Equation:'),
+       title: const Text('Enter Your Equation (only supports interger values):'),
              backgroundColor: Color.fromRGBO(236,229,243,1)),
 
 
@@ -793,7 +793,7 @@ void initState() {
               const SizedBox(height: 20),
               
               const Text(
-                'Divide the blue number by the orange number. The result is the value of x.',
+                'Divide the blue number by the orange number. If necessary round to the nearest integer. The result is the value of x.',
                 textAlign: TextAlign.center,
                 style: TextStyle(fontSize: 15),
               ),
