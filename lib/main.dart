@@ -21,8 +21,197 @@ List<String> xvalrightValues = [];
 void main() {
  runApp(const MyApp());
 }
+String simplifySigns(String equation) {
+  String removeCharAt(String str, int index) {
+    return str.substring(0, index) + str.substring(index + 1);
+  }
 
+  String replaceAt(String str, int index, String replacement) {
+    if (index < 0 || index >= str.length) return str;
+    return str.substring(0, index) + replacement + str.substring(index + 1);
+  }
 
+  for (int i = equation.length - 1; i > 0; i--) {
+    if (equation[i] == '-') {
+      if (equation[i - 1] == '+') {
+        equation = removeCharAt(equation, i);
+        equation = replaceAt(equation, i - 1, '-');
+      } else if (equation[i - 1] == '-') {
+        equation = removeCharAt(equation, i);
+        equation = replaceAt(equation, i - 1, '+');
+      }
+    }
+  }
+
+  return equation;
+}
+
+String simplifyEquation(String equations) {
+  List<String> equation = [];
+  List<int> startIndex = [];
+  List<int> endIndex = [];
+  List<int> multiplier = [];
+  String adding = '';
+  String equationReturning = '';
+
+  bool isInteger(String str) => int.tryParse(str) != null;
+
+  bool isNotInteger(String str) => !isInteger(str);
+
+  for (int i = 0; i < equations.length; i++) {
+    String current = equations.substring(i, i + 1);
+
+    if (isInteger(current)) {
+      adding += current;
+
+      if (i + 1 < equations.length && RegExp(r'[a-zA-Z]').hasMatch(equations[i + 1])) {
+        adding += equations.substring(i + 1, i + 2);
+        i++;
+      }
+
+      if (i + 1 == equations.length ||
+          (isNotInteger(equations.substring(i + 1, i + 2)) &&
+              !RegExp(r'[a-zA-Z]').hasMatch(equations[i + 1]))) {
+        equation.add(adding);
+        adding = '';
+      }
+    } else if (RegExp(r'[a-zA-Z]').hasMatch(current)) {
+      equation.add(current);
+    } else {
+      if (adding.isNotEmpty) {
+        equation.add(adding);
+        adding = '';
+      }
+
+      if (current == '-' &&
+          i + 1 < equations.length &&
+          isInteger(equations.substring(i + 1, i + 2))) {
+        adding = '-';
+      } else if (current != '*') {
+        equation.add(current);
+      }
+    }
+  }
+
+  // Handle parentheses and distribute multipliers
+  for (int i = 0; i < equation.length; i++) {
+    if (equation[i] == '(') {
+      if (i == 0 ||
+          !(isInteger(equation[i - 1]) || equation[i - 1].endsWith('x'))) {
+        if (i > 0 && equation[i - 1] == '-') {
+          multiplier.add(-1);
+          equation[i - 1] = 'SKIP';
+        } else {
+          multiplier.add(1);
+        }
+      } else {
+        multiplier.add(int.parse(equation[i - 1]));
+        equation[i - 1] = 'SKIP';
+      }
+      startIndex.add(i);
+    } else if (equation[i] == ')') {
+      endIndex.add(i);
+    }
+  }
+
+  // Distribute inside parentheses
+  for (int i = startIndex.length - 1; i >= 0; i--) {
+    int start = startIndex[i];
+    int end = endIndex[i];
+    int mult = multiplier[i];
+    List<String> distributed = [];
+
+    for (int j = start + 1; j < end; j++) {
+      String val = equation[j];
+      if (val == '+' || val == '-') {
+        distributed.add(val);
+      } else if (isInteger(val)) {
+        int value = int.parse(val);
+        distributed.add((value * mult).toString());
+      } else if (val.endsWith('x')) {
+        String coef = val.replaceAll('x', '');
+        if (coef == '') coef = '1';
+        if (coef == '-') coef = '-1';
+        int value = int.parse(coef);
+        distributed.add('${value * mult}x');
+      }
+    }
+
+    for (int j = end; j >= start; j--) {
+      equation.removeAt(j);
+    }
+
+    equation.insertAll(start, distributed);
+  }
+
+  // Remove 'SKIP' markers
+  equation.removeWhere((element) => element == 'SKIP');
+
+  // Combine to return string
+  for (String part in equation) {
+    equationReturning += part;
+  }
+
+  return equationReturning;
+}
+
+String simplifyMultiplication(String equations) {
+  List<String> equation = [];
+  String adding = '';
+  String equationReturning = '';
+
+  bool isInteger(String str) {
+    return int.tryParse(str) != null;
+  }
+
+  for (int i = 0; i < equations.length; i++) {
+    String current = equations.substring(i, i + 1);
+
+    if (isInteger(current)) {
+      adding += current;
+
+      if (i + 1 == equations.length ||
+          (!isInteger(equations.substring(i + 1, i + 2)) &&
+              !RegExp(r'[a-zA-Z]').hasMatch(equations[i + 1]))) {
+        equation.add(adding);
+        adding = '';
+      }
+    } else if (RegExp(r'[a-zA-Z]').hasMatch(current)) {
+      adding += current;
+
+      if (i + 1 == equations.length ||
+          (!RegExp(r'[a-zA-Z]').hasMatch(equations[i + 1]) &&
+              !isInteger(equations.substring(i + 1, i + 2)))) {
+        equation.add(adding);
+        adding = '';
+      }
+    } else {
+      if (adding.isNotEmpty) {
+        equation.add(adding);
+        adding = '';
+      }
+      equation.add(current);
+    }
+  }
+
+  for (int i = 0; i < equation.length - 2; i++) {
+    if (equation[i + 1] == '*' &&
+        isInteger(equation[i]) &&
+        isInteger(equation[i + 2])) {
+      int mult = int.parse(equation[i]) * int.parse(equation[i + 2]);
+      equation[i] = mult.toString();
+      equation.removeAt(i + 2);
+      equation.removeAt(i + 1);
+      i = -1; // restart the loop
+    }
+  }
+
+  for (int i = 0; i < equation.length; i++) {
+    equationReturning += equation[i];
+  }
+
+  return equationReturning;
+}
 
 
 /// findComponents - Parses an algebraic equation to identify x terms and constants on both sides.
@@ -325,7 +514,8 @@ class _TextBoxExampleState extends State<TextBoxExample> {
 
 
  void _goToNewPage() {
-   String equation = _controller.text;
+String rawInput = _controller.text;
+String equation = simplifySigns(simplifyEquation(simplifyMultiplication(rawInput)));
    Navigator.push(
      context,
      MaterialPageRoute(
