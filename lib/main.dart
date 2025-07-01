@@ -1,7 +1,8 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
-
-
+import 'package:hive_flutter/hive_flutter.dart';
+import 'package:path_provider/path_provider.dart';
+import 'models/solvedproblem.dart';
 
 // Global Lists to store character indices of x terms and constants on each side
 List<int> xvalleft = [];
@@ -9,23 +10,42 @@ List<int> constantsleft = [];
 List<int> xvalright = [];
 List<int> constantsright = [];
 
-
-
 // Global Lists to store string representations of extracted x terms and constants
 List<String> constantsleftValues = [];
 List<String> constantsrightValues = [];
 List<String> xvalleftValues = [];
 List<String> xvalrightValues = [];
 
-
-void main() {
- runApp(const MyApp());
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await Hive.initFlutter();
+  
+  //final appDocumentDir = await getApplicationDocumentsDirectory();
+ // Hive.init(appDocumentDir.path);
+  Hive.registerAdapter(SolvedProblemAdapter());
+  await Hive.openBox<SolvedProblem>('solved_problems');
+  runApp(const MyApp());
 }
 
+class MyApp extends StatelessWidget {
+  const MyApp({super.key});
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      theme: ThemeData(
+        scaffoldBackgroundColor: const Color.fromARGB(255, 255, 255, 255),
+      ),
+      title: 'Dycalculating equations',
+      home: 
+      //Scaffold(body: Center(child: Text('Hello World')))
+       const TextBoxExample(),
+    );
+  }
+}
 
+// =================== Utility Functions ===================
 
-
-/// findComponents - Parses an algebraic equation to identify x terms and constants on both sides.
+/// Parses an algebraic equation to identify x terms and constants on both sides.
 /// It also colors x terms as blue and constants as orange.
 /// @param equation The input algebraic equation as a string.
 /// @return A RichText widget displaying the formatted equation.
@@ -43,11 +63,7 @@ Widget findComponents(String equation) {
   equation = equation.replaceAll(' ', '');
   var left = "", right = "";
 
-
-// Loop that scans the 'equation' string to find the first '=' character.
-// Once found, it splits the equation into two parts:
-// 'left' contains the substring before the '=', and
-// 'right' contains the substring after the '='.
+  // Split equation at '='
   for (var i = 0; i < equation.length; i++) {
     if (equation[i] == '=') {
       left = equation.substring(0, i);
@@ -56,14 +72,7 @@ Widget findComponents(String equation) {
     }
   }
 
-
   // LEFT SIDE
-// This loop iterates through the left side of the equation (before '=').
-// It identifies constants and variable terms (i.e., "3", "-2x", "x") using helper functions:
-// - isNumeric(): checks if a character is a digit
-// - isLetter(): checks if a character is a letter
-// It stores the indices of the constants and variables in 'constantsleft' and 'xvalleft', respectively.
-// Their string values are stored in 'constantsleftValues' and 'xvalleftValues'.
   int j = 0;
   while (j < left.length) {
     if (isNumeric(left[j]) || (left[j] == '-' && j + 1 < left.length && isNumeric(left[j + 1]))) {
@@ -98,14 +107,7 @@ Widget findComponents(String equation) {
     }
   }
 
-
   // RIGHT SIDE
-// This loop iterates through the right side of the equation (before '=').
-// It identifies constants and variable terms (i.e., "3", "-2x", "x") using helper functions:
-// - isNumeric(): checks if a character is a digit
-// - isLetter(): checks if a character is a letter
-// It stores the indices of the constants and variables in 'constantsright' and 'xvalright', respectively.
-// Their string values are stored in 'constantsrightValues' and 'xvalrightValues'.
   int i = 0;
   while (i < right.length) {
     if (isNumeric(right[i]) || (right[i] == '-' && i + 1 < right.length && isNumeric(right[i + 1]))) {
@@ -140,25 +142,16 @@ Widget findComponents(String equation) {
     }
   }
 
-
-  // === FORMAT EQUATION WITH TERM SPACING ===
-// This part formats the 'raw' equation string by adding spacing around operators
-// like '+', '-', and '=' to improve readability. It also groups numbers and variables
-// together as individual terms (e.g., "5x" or "10") so they are treated as units.
+  // Format equation with term spacing
   String formattedEquation = '';
   final buffer = StringBuffer();
-
-
   int k = 0;
   while (k < equation.length) {
     String char = equation[k];
-
-
-    if (char == '+' || char == '-' || char == '=' ) {
+    if (char == '+' || char == '-' || char == '=') {
       buffer.write('  $char  ');
       k++;
     } else {
-
       String term = '';
       while (k < equation.length && equation[k] != '+' && equation[k] != '-' && equation[k] != '=') {
         term += equation[k];
@@ -167,33 +160,18 @@ Widget findComponents(String equation) {
       buffer.write(term);
     }
   }
-
-
   formattedEquation = buffer.toString();
 
-
-  // === COLORING BASED ON ORIGINAL INDEX ===
-  // Builds a styled version of the formatted equation by assigning colors
-// to variables (x terms) and constants based on their positions in the original equation.
-// It creates a List of TextSpan objects for syntax-style highlighting.
-
+  // Coloring based on original index
   List<InlineSpan> spans = [];
   int rawIndex = 0;
-
-
   for (int idx = 0; idx < formattedEquation.length; idx++) {
     String char = formattedEquation[idx];
-
-
     if (char == ' ') {
       spans.add(const TextSpan(text: ' '));
       continue;
     }
-
-
     TextStyle style = const TextStyle(color: Colors.black);
-
-
     if (rawIndex < left.length) {
       if (xvalleft.contains(rawIndex)) {
         style = const TextStyle(color: Colors.blue);
@@ -201,7 +179,6 @@ Widget findComponents(String equation) {
         style = const TextStyle(color: Color.fromARGB(255, 255, 149, 0));
       }
     } else if (rawIndex == left.length) {
-      // '=' character
       style = const TextStyle(color: Colors.black);
     } else {
       int rightIndex = rawIndex - (left.length + 1);
@@ -211,405 +188,535 @@ Widget findComponents(String equation) {
         style = const TextStyle(color: Color.fromARGB(255, 255, 149, 0));
       }
     }
-
-
     spans.add(TextSpan(text: char, style: style));
     rawIndex++;
   }
-
-
   return RichText(
     text: TextSpan(children: spans, style: const TextStyle(fontSize: 24)),
   );
 }
 
-
 /// Adds spacing around operators (+, -, =) in an equation string
-/// to improve readability and separate terms like "5x" or "10".
-/// @param eq The 'raw' equation string to format.
-/// @return A string with spaces added between terms and operators.
 String addSpacesBetweenTerms(String eq) {
   String result = '';
   int i = 0;
-
-
   while (i < eq.length) {
     String char = eq[i];
-
-
     if (char == '+' || char == '-' || char == '=') {
       result += '  $char  ';
       i++;
     } else {
       String term = '';
-      while (i < eq.length &&
-          eq[i] != '+' &&
-          eq[i] != '-' &&
-          eq[i] != '=') {
+      while (i < eq.length && eq[i] != '+' && eq[i] != '-' && eq[i] != '=') {
         term += eq[i];
         i++;
       }
       result += term;
     }
   }
-
-
   return result.trim();
 }
 
+String simplifySigns(String equation) {
+  String removeCharAt(String str, int index) {
+    return str.substring(0, index) + str.substring(index + 1);
+  }
 
+  String replaceAt(String str, int index, String replacement) {
+    if (index < 0 || index >= str.length) return str;
+    return str.substring(0, index) + replacement + str.substring(index + 1);
+  }
 
+  for (int i = equation.length - 1; i > 0; i--) {
+    if (equation[i] == '-') {
+      if (equation[i - 1] == '+') {
+        equation = removeCharAt(equation, i);
+        equation = replaceAt(equation, i - 1, '-');
+      } else if (equation[i - 1] == '-') {
+        equation = removeCharAt(equation, i);
+        equation = replaceAt(equation, i - 1, '+');
+      }
+    }
+  }
 
+  return equation;
+}
+
+String simplifyEquation(String equations) {
+  List<String> equation = [];
+  List<int> startIndex = [];
+  List<int> endIndex = [];
+  List<int> multiplier = [];
+  String adding = '';
+  String equationReturning = '';
+
+  bool isInteger(String str) => int.tryParse(str) != null;
+
+  bool isNotInteger(String str) => !isInteger(str);
+
+  for (int i = 0; i < equations.length; i++) {
+    String current = equations.substring(i, i + 1);
+
+    if (isInteger(current)) {
+      adding += current;
+
+      if (i + 1 < equations.length && RegExp(r'[a-zA-Z]').hasMatch(equations[i + 1])) {
+        adding += equations.substring(i + 1, i + 2);
+        i++;
+      }
+
+      if (i + 1 == equations.length ||
+          (isNotInteger(equations.substring(i + 1, i + 2)) &&
+              !RegExp(r'[a-zA-Z]').hasMatch(equations[i + 1]))) {
+        equation.add(adding);
+        adding = '';
+      }
+    } else if (RegExp(r'[a-zA-Z]').hasMatch(current)) {
+      equation.add(current);
+    } else {
+      if (adding.isNotEmpty) {
+        equation.add(adding);
+        adding = '';
+      }
+
+      if (current == '-' &&
+          i + 1 < equations.length &&
+          isInteger(equations.substring(i + 1, i + 2))) {
+        adding = '-';
+      } else if (current != '*') {
+        equation.add(current);
+      }
+    }
+  }
+
+  // Handle parentheses and distribute multipliers
+  for (int i = 0; i < equation.length; i++) {
+    if (equation[i] == '(') {
+      if (i == 0 ||
+          !(isInteger(equation[i - 1]) || equation[i - 1].endsWith('x'))) {
+        if (i > 0 && equation[i - 1] == '-') {
+          multiplier.add(-1);
+          equation[i - 1] = 'SKIP';
+        } else {
+          multiplier.add(1);
+        }
+      } else {
+        multiplier.add(int.parse(equation[i - 1]));
+        equation[i - 1] = 'SKIP';
+      }
+      startIndex.add(i);
+    } else if (equation[i] == ')') {
+      endIndex.add(i);
+    }
+  }
+
+  // Distribute inside parentheses
+  for (int i = startIndex.length - 1; i >= 0; i--) {
+    int start = startIndex[i];
+    int end = endIndex[i];
+    int mult = multiplier[i];
+    List<String> distributed = [];
+
+    for (int j = start + 1; j < end; j++) {
+      String val = equation[j];
+      if (val == '+' || val == '-') {
+        distributed.add(val);
+      } else if (isInteger(val)) {
+        int value = int.parse(val);
+        distributed.add((value * mult).toString());
+      } else if (val.endsWith('x')) {
+        String coef = val.replaceAll('x', '');
+        if (coef == '') coef = '1';
+        if (coef == '-') coef = '-1';
+        int value = int.parse(coef);
+        distributed.add('${value * mult}x');
+      }
+    }
+
+    for (int j = end; j >= start; j--) {
+      equation.removeAt(j);
+    }
+
+    equation.insertAll(start, distributed);
+  }
+
+  // Remove 'SKIP' markers
+  equation.removeWhere((element) => element == 'SKIP');
+
+  // Combine to return string
+  for (String part in equation) {
+    equationReturning += part;
+  }
+
+  return equationReturning;
+}
+
+String simplifyMultiplication(String equations) {
+  List<String> equation = [];
+  String adding = '';
+  String equationReturning = '';
+
+  bool isInteger(String str) {
+    return int.tryParse(str) != null;
+  }
+
+  for (int i = 0; i < equations.length; i++) {
+    String current = equations.substring(i, i + 1);
+
+    if (isInteger(current)) {
+      adding += current;
+
+      if (i + 1 == equations.length ||
+          (!isInteger(equations.substring(i + 1, i + 2)) &&
+              !RegExp(r'[a-zA-Z]').hasMatch(equations[i + 1]))) {
+        equation.add(adding);
+        adding = '';
+      }
+    } else if (RegExp(r'[a-zA-Z]').hasMatch(current)) {
+      adding += current;
+
+      if (i + 1 == equations.length ||
+          (!RegExp(r'[a-zA-Z]').hasMatch(equations[i + 1]) &&
+              !isInteger(equations.substring(i + 1, i + 2)))) {
+        equation.add(adding);
+        adding = '';
+      }
+    } else {
+      if (adding.isNotEmpty) {
+        equation.add(adding);
+        adding = '';
+      }
+      equation.add(current);
+    }
+  }
+
+  for (int i = 0; i < equation.length - 2; i++) {
+    if (equation[i + 1] == '*' &&
+        isInteger(equation[i]) &&
+        isInteger(equation[i + 2])) {
+      int mult = int.parse(equation[i]) * int.parse(equation[i + 2]);
+      equation[i] = mult.toString();
+      equation.removeAt(i + 2);
+      equation.removeAt(i + 1);
+      i = -1; // restart the loop
+    }
+  }
+
+  for (int i = 0; i < equation.length; i++) {
+    equationReturning += equation[i];
+  }
+
+  return equationReturning;
+}
 
 /// Checks if the given string is a valid number (integer or decimal)
-/// @param s The string to evaluate.
-/// @return True if the string can be parsed as a number, false otherwise.
 bool isNumeric(String s) {
- return double.tryParse(s) != null;
+  return double.tryParse(s) != null;
 }
-
-
 
 /// Checks if a single-character string is a letter (A-Z or a-z) using ASCII values.
-/// @param s The character to evaluate (should be length 1).
-/// @return True if the character is a letter, false otherwise.
 bool isLetter(String s) {
- if (s.length != 1) return false;
- int codeUnit = s.codeUnitAt(0);
- return (codeUnit >= 65 && codeUnit <= 90) || (codeUnit >= 97 && codeUnit <= 122);
+  if (s.length != 1) return false;
+  int codeUnit = s.codeUnitAt(0);
+  return (codeUnit >= 65 && codeUnit <= 90) || (codeUnit >= 97 && codeUnit <= 122);
 }
 
-
-
-
-class MyApp extends StatelessWidget {
- const MyApp({super.key});
-
-
-
-
- @override
- Widget build(BuildContext context) {
-   return MaterialApp(
-     theme: ThemeData(
-       scaffoldBackgroundColor: const Color.fromARGB(255, 255, 255, 255),
-     ),
-     title: 'Dycalculating equations',
-     home: const TextBoxExample(),
-   );
- }
-}
-
-
-
-
+// =================== TextBoxExample ===================
 class TextBoxExample extends StatefulWidget {
- const TextBoxExample({super.key});
-
-
-
-
- @override
- State<TextBoxExample> createState() => _TextBoxExampleState();
+  const TextBoxExample({super.key});
+  @override
+  State<TextBoxExample> createState() => _TextBoxExampleState();
 }
-
-
-
 
 class _TextBoxExampleState extends State<TextBoxExample> {
- final TextEditingController _controller = TextEditingController();
- File? selectedMedia;
- String extractedText = "";
-
-
-
-
- void _goToNewPage() {
-   String equation = _controller.text;
-   Navigator.push(
-     context,
-     MaterialPageRoute(
-       builder: (context) => EquationPage(equation: equation),
-     ),
-   );
- }
-
-
-
-
- @override
- Widget build(BuildContext context) {
-   return Scaffold(
-     appBar: AppBar(
-       title: const Text('Enter a linear equation using only whole-number values'),
-             backgroundColor: Color.fromRGBO(236,229,243,1)),
-
-
-     body: Padding(
-       padding: const EdgeInsets.all(16.0),
-       child: Column(
-         children: [
-           TextField(
-             controller: _controller,
-             decoration: const InputDecoration(
-               border: OutlineInputBorder(),
-               labelText: 'Type equation here:',
-             ),
-           ),
-           const SizedBox(height: 20),
-           ElevatedButton(
-             onPressed: _goToNewPage,
-             child: const Text('Enter'),
-           ),
-           const SizedBox(height: 20),
-           if (selectedMedia != null) ...[
-             Image.file(selectedMedia!, width: 200),
-             const SizedBox(height: 10),
-             Text(
-               extractedText.isEmpty ? "Extracting text..." : "Detected: $extractedText",
-               style: const TextStyle(fontSize: 18),
-               textAlign: TextAlign.center,
-             ),
-           ],
-         ],
-       ),
-     ),
-   );
- }
-}
-
-
-
-
-class EquationPage extends StatefulWidget {
- final String equation;
-
-
-
-
- const EquationPage({super.key, required this.equation});
-
-
-
-
- @override
- State<EquationPage> createState() => _EquationPageState();
-}
-
-
-
-
-class _EquationPageState extends State<EquationPage> {
- final TextEditingController _answerController = TextEditingController();
- int correctAnswer = 0;
-
-
-
-// Function to calculate the sum of the constants on both sides of the equation
-// @parameter values - list of string values to be summed
-// @return the sum of the values in the list
- int getSum(List<String> values) {
-   return values.fold(0, (sum, val) => sum + (int.tryParse(val) ?? 0));
- }
-
-
-
-/// Initializes the state of the widget and computes the correct answer
-/// by extracting and summing constants from both sides of the equation.
-/// The difference (rightSum - leftSum) is stored as the correct answer
-/// to be used for answer validation later.
- @override
- void initState() {
-   super.initState();
-   findComponents(widget.equation);
-
-
-
-
-   int rightSum = getSum(constantsrightValues);
-   int leftSum = getSum(constantsleftValues);
-   correctAnswer = rightSum - leftSum;
- }
-
-
-
-/// Checks the user's submitted answer against the correct value for Step 1.
-/// @param _answerController.text - the text input from the user.
-/// If correct, navigates to StepTwoPage. If incorrect, displays
-/// a SnackBar message prompting the user to try again.
- void checkAnswer() {
-   int? userAnswer = int.tryParse(_answerController.text);
-   if (userAnswer != null && userAnswer == correctAnswer) {
-     Navigator.push(
-       context,
-       MaterialPageRoute(
-         builder: (context) => StepTwoPage(equation: widget.equation),
-       ),
-     );
-   } else {
-     ScaffoldMessenger.of(context).showSnackBar(
-       const SnackBar(content: Text('Incorrect, try again!')),
-     );
-   }
- }
-
-
-
-
- @override
- Widget build(BuildContext context) {
-   String breakdown = constantsrightValues.join(' + ');
-   if (constantsleftValues.isNotEmpty) {
-     for (var val in constantsleftValues) {
-       breakdown += ' - $val';
-     }
-   }
-   breakdown += ' = ';
-
-
-
-
-   return Scaffold(
-     appBar: AppBar(title: const Text("Step One"),
-           backgroundColor: Color.fromRGBO(236,229,243,1)),
-
-
-     body: Center(
-       child: Padding(
-         padding: const EdgeInsets.all(16.0),
-         child: Column(
-           mainAxisAlignment: MainAxisAlignment.center,
-           children: [
-              const Text(
-                'Step one:',
-                style: TextStyle(fontSize: 20),
-              ),
-             findComponents(widget.equation),
-            const SizedBox(height: 20),
-             
-             const Text(
-               'Add all the orange numbers on the right side together. Then subtract the orange numbers on the left side from that sum.',
-               style: TextStyle(fontSize: 15),
-             ),
-             const SizedBox(height: 20),
-             Text(
-               breakdown,
-               style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Color.fromARGB(255, 255, 149, 0)),
-             ),
-             const SizedBox(height: 10),
-             SizedBox(
-               width: 100,
-               child: TextField(
-                 controller: _answerController,
-                 keyboardType: TextInputType.number,
-                 decoration: const InputDecoration(
-                   hintText: '?',
-                   border: OutlineInputBorder(),
-                 ),
-               ),
-             ),
-             const SizedBox(height: 20),
-             ElevatedButton(
-               onPressed: checkAnswer,
-               child: const Text('Check Answer'),
-             ),
-           ],
-         ),
-       ),
-     ),
-   );
- }
-}
-
-
-
-
-class StepTwoPage extends StatefulWidget {
-  final String equation;
-
-
-  const StepTwoPage({super.key, required this.equation});
-
+  final TextEditingController _controller = TextEditingController();
+  File? selectedMedia;
+  String extractedText = "";
+  List<SolvedProblem> history = [];
 
   @override
-  State<StepTwoPage> createState() => _StepTwoPageState();
+  void initState() {
+    super.initState();
+    loadHistory();
+  }
+
+  void loadHistory() {
+    final box = Hive.box<SolvedProblem>('solved_problems');
+    setState(() {
+      history = box.values.toList().reversed.toList();
+    });
+  }
+
+  void _goToNewPage() {
+    //String equation = _controller.text;
+    String rawInput = _controller.text;
+String equation = simplifySigns(simplifyEquation(simplifyMultiplication(rawInput)));
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => EquationPage(equation: equation),
+      ),
+    ).then((_) => loadHistory());
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Enter a linear equation using only whole-number values'),
+        backgroundColor: Color.fromRGBO(236,229,243,1),
+      ),
+      body: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          children: [
+            TextField(
+              controller: _controller,
+              decoration: const InputDecoration(
+                border: OutlineInputBorder(),
+                labelText: 'Type equation here:',
+              ),
+            ),
+            const SizedBox(height: 20),
+            ElevatedButton(
+              onPressed: _goToNewPage,
+              child: const Text('Enter'),
+            ),
+            const SizedBox(height: 20),
+            if (selectedMedia != null) ...[
+              Image.file(selectedMedia!, width: 200),
+              const SizedBox(height: 10),
+              Text(
+                extractedText.isEmpty ? "Extracting text..." : "Detected: $extractedText",
+                style: const TextStyle(fontSize: 18),
+                textAlign: TextAlign.center,
+              ),
+            ],
+            const SizedBox(height: 30),
+            const Text(
+              "Past Problems",
+              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
+            ),
+            Expanded(
+              child: history.isEmpty
+                  ? const Center(child: Text("No problems solved yet."))
+                  : ListView.builder(
+                      itemCount: history.length,
+                      itemBuilder: (context, index) {
+                        final problem = history[index];
+                        return ListTile(
+                          title: Text(problem.equation),
+                          subtitle: Text("x = ${problem.finalAnswer}"),
+                          onTap: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) =>
+                                EquationPage(equation: problem.equation,
+        correctAnswerOverride: problem.step1Answer, 
+      ),
+                              
+                              ),
+                            );
+                          },
+                        );
+                      },
+                    ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }
 
+// =================== EquationPage ===================
+class EquationPage extends StatefulWidget {
+  final String equation;
+  final int? correctAnswerOverride;
 
-class _StepTwoPageState extends State<StepTwoPage> {
+  const EquationPage({super.key, required this.equation, this.correctAnswerOverride});
+  @override
+  State<EquationPage> createState() => _EquationPageState();
+}
+
+class _EquationPageState extends State<EquationPage> {
   final TextEditingController _answerController = TextEditingController();
   int correctAnswer = 0;
-
 
   int getSum(List<String> values) {
     return values.fold(0, (sum, val) => sum + (int.tryParse(val) ?? 0));
   }
 
+  // Helper to compute step 2 answer
+  int getStep2Answer() {
+    int leftSum = getSum(xvalleftValues);
+    int rightSum = getSum(xvalrightValues);
+    return leftSum - rightSum;
+  }
 
   @override
   void initState() {
     super.initState();
     findComponents(widget.equation);
+    int rightSum = getSum(constantsrightValues);
+    int leftSum = getSum(constantsleftValues);
+    correctAnswer = widget.correctAnswerOverride ?? (rightSum - leftSum);
 
-
-  int leftSum = getSum(xvalleftValues);
-int rightSum = getSum(xvalrightValues);
-correctAnswer = leftSum - rightSum;
-
-
+    if (widget.correctAnswerOverride != null) {
+      _answerController.text = correctAnswer.toString();
+    }
   }
 
-// Function to build the equation string for Step 2
-// This function constructs a string representation of the equation
-// by summing the x coefficients on the left side and subtracting
-// the x coefficients on the right side.
-  String buildStep2Equation() {
-  String result = '';
-
-
-  for (int i = 0; i < xvalleftValues.length; i++) {
-    if (i != 0) result += ' + ';
-    result += xvalleftValues[i];
-  }
-
-
-  for (String val in xvalrightValues) {
-    result += ' - $val';
-  }
-
-
-  result += ' = ?';
-  return result;
-}
-
-
-
-// Function to check the user's answer for Step 2
-// Validates the user's input against the correct answer.
-// If correct, navigates to StepThreePage. If incorrect, displays a SnackBar message.
   void checkAnswer() {
     int? userAnswer = int.tryParse(_answerController.text);
     if (userAnswer != null && userAnswer == correctAnswer) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Correct! ')),
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => StepTwoPage(
+            equation: widget.equation,
+            correctAnswerOverride: widget.correctAnswerOverride != null ? getStep2Answer() : null,
+          ),
+        ),
       );
-      
-    }if (userAnswer != null && userAnswer == correctAnswer) {
-  Navigator.push(
-    context,
-    MaterialPageRoute(
-      builder: (context) => StepThreePage(equation: widget.equation),
-    ),
-  );
-} else {
-  ScaffoldMessenger.of(context).showSnackBar(
-    const SnackBar(content: Text('Incorrect, try again.')),
-  );
-}
-
-
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Incorrect, try again!')),
+      );
+    }
   }
 
+  @override
+  Widget build(BuildContext context) {
+    String breakdown = constantsrightValues.join(' + ');
+    if (constantsleftValues.isNotEmpty) {
+      for (var val in constantsleftValues) {
+        breakdown += ' - $val';
+      }
+    }
+    breakdown += ' = ';
+
+    return Scaffold(
+      appBar: AppBar(title: const Text("Step One"),
+        backgroundColor: Color.fromRGBO(236,229,243,1)),
+      body: Center(
+        child: Padding(
+          padding: const EdgeInsets.all(16.0),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Text(
+                'Step one:',
+                style: TextStyle(fontSize: 20),
+              ),
+              findComponents(widget.equation),
+              const SizedBox(height: 20),
+              const Text(
+                'Add all the orange numbers on the right side together. Then subtract the orange numbers on the left side from that sum.',
+                style: TextStyle(fontSize: 15),
+              ),
+              const SizedBox(height: 20),
+              Text(
+                breakdown,
+                style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Color.fromARGB(255, 255, 149, 0)),
+              ),
+              const SizedBox(height: 10),
+              SizedBox(
+                width: 100,
+                child: TextField(
+                  controller: _answerController,
+                  keyboardType: TextInputType.number,
+                  decoration: const InputDecoration(
+                    hintText: '?',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 20),
+              ElevatedButton(
+                onPressed: checkAnswer,
+                child: const Text('Check Answer'),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// =================== StepTwoPage ===================
+class StepTwoPage extends StatefulWidget {
+  final String equation;
+  final int? correctAnswerOverride;
+  const StepTwoPage({super.key, required this.equation, this.correctAnswerOverride});
+  @override
+  State<StepTwoPage> createState() => _StepTwoPageState();
+}
+
+class _StepTwoPageState extends State<StepTwoPage> {
+  final TextEditingController _answerController = TextEditingController();
+  int correctAnswer = 0;
+
+  int getSum(List<String> values) {
+    return values.fold(0, (sum, val) => sum + (int.tryParse(val) ?? 0));
+  }
+
+  // Helper to compute step 3 answer
+  int getStep3Answer() {
+    int step1Right = getSum(constantsrightValues);
+    int step1Left = getSum(constantsleftValues);
+    int step1Result = step1Right - step1Left;
+    int step2Left = getSum(xvalleftValues);
+    int step2Right = getSum(xvalrightValues);
+    int step2Result = step2Left - step2Right;
+    return step2Result != 0 ? (step1Result / step2Result).round() : 0;
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    findComponents(widget.equation);
+    int leftSum = getSum(xvalleftValues);
+    int rightSum = getSum(xvalrightValues);
+    correctAnswer = widget.correctAnswerOverride ?? (leftSum - rightSum);
+    if (widget.correctAnswerOverride != null) {
+      _answerController.text = correctAnswer.toString();
+    }
+  }
+
+  String buildStep2Equation() {
+    String result = '';
+    for (int i = 0; i < xvalleftValues.length; i++) {
+      if (i != 0) result += ' + ';
+      result += xvalleftValues[i];
+    }
+    for (String val in xvalrightValues) {
+      result += ' - $val';
+    }
+    result += ' = ?';
+    return result;
+  }
+
+  void checkAnswer() {
+    int? userAnswer = int.tryParse(_answerController.text);
+    if (userAnswer != null && userAnswer == correctAnswer) {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => StepThreePage(
+            equation: widget.equation,
+            correctAnswerOverride: widget.correctAnswerOverride != null ? getStep3Answer() : null,
+          ),
+        ),
+      );
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Incorrect, try again.')),
+      );
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -625,20 +732,11 @@ correctAnswer = leftSum - rightSum;
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               const Text(
-                'Correct!',
-                style: TextStyle(
-                  fontSize: 24,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.green,
-                ),
-              ),
-              const SizedBox(height: 20),
-              const Text(
                 'Step two:',
                 style: TextStyle(fontSize: 20),
               ),
               const SizedBox(height: 20),
-             findComponents(widget.equation),
+              findComponents(widget.equation),
               const SizedBox(height: 20),
               const Text(
                 'Add all the blue numbers on the left side together. Then subtract the blue numbers on the right side from that sum.',
@@ -679,96 +777,82 @@ correctAnswer = leftSum - rightSum;
   }
 }
 
-
+// =================== StepThreePage ===================
 class StepThreePage extends StatefulWidget {
   final String equation;
-  const StepThreePage({super.key, required this.equation});
-
-
+  final int? correctAnswerOverride;
+  const StepThreePage({super.key, required this.equation, this.correctAnswerOverride});
   @override
   State<StepThreePage> createState() => _StepThreePageState();
 }
-
 
 class _StepThreePageState extends State<StepThreePage> {
   final TextEditingController _answerController = TextEditingController();
   int correctAnswer = 0;
 
-
   int getSum(List<String> values) {
     return values.fold(0, (sum, val) => sum + (int.tryParse(val) ?? 0));
   }
 
+  @override
+  void initState() {
+    super.initState();
+    findComponents(widget.equation);
 
- @override
-void initState() {
-  super.initState();
- findComponents(widget.equation);
+    int step1Right = getSum(constantsrightValues);
+    int step1Left = getSum(constantsleftValues);
+    int step1Result = step1Right - step1Left;
 
+    int step2Left = getSum(xvalleftValues);
+    int step2Right = getSum(xvalrightValues);
+    int step2Result = step2Left - step2Right;
 
-  // Step 1: constants sum
-  int step1Right = getSum(constantsrightValues);
-  int step1Left = getSum(constantsleftValues);
-  int step1Result = step1Right - step1Left;
-
-
-  // Step 2: x coefficient sum
-  int step2Left = getSum(xvalleftValues);
-  int step2Right = getSum(xvalrightValues);
-  int step2Result = step2Left - step2Right;
-
-
-  if (step2Result != 0) {
-    correctAnswer = (step1Result / step2Result).round(); // rounding for integer TextField
-  } else {
-    correctAnswer = 0; // or handle divide-by-zero more carefully if needed
+    if (step2Result != 0) {
+      correctAnswer = (step1Result / step2Result).round();
+    } else {
+      correctAnswer = 0;
+    }
+    if (widget.correctAnswerOverride != null) {
+      _answerController.text = correctAnswer.toString();
+    }
   }
-}
 
-
-
-// Function to build the equation string for Step 3
-// Constructs the equation for the final step by dividing the sum of constants
-// by the sum of x coefficients. This represents solving for x.
   String buildStep3Equation() {
-  int step1Right = getSum(constantsrightValues);
-  int step1Left = getSum(constantsleftValues);
-  int step1Result = step1Right - step1Left;
+    int step1Right = getSum(constantsrightValues);
+    int step1Left = getSum(constantsleftValues);
+    int step1Result = step1Right - step1Left;
 
+    int step2Left = getSum(xvalleftValues);
+    int step2Right = getSum(xvalrightValues);
+    int step2Result = step2Left - step2Right;
 
-  int step2Left = getSum(xvalleftValues);
-  int step2Right = getSum(xvalrightValues);
-  int step2Result = step2Left - step2Right;
+    return '$step1Result / $step2Result = ?';
+  }
 
-
-  return '$step1Result / $step2Result = ?';
-}
-
-
-
-// Function to check the user's answer for Step 3
-// Validates the user's input against the correct answer.
-// If correct, navigates to FinalAnswerPage. If incorrect, displays a SnackBar message.
   void checkAnswer() {
     int? userAnswer = int.tryParse(_answerController.text);
     if (userAnswer != null && userAnswer == correctAnswer) {
-  Navigator.push(
-    context,
-    MaterialPageRoute(
-      builder: (context) => FinalAnswerPage(finalAnswer: correctAnswer),
-    ),
-  );
-}
-
-
-      
-     else {
+      final box = Hive.box<SolvedProblem>('solved_problems');
+      final problem = SolvedProblem(
+        equation: widget.equation,
+        step1Answer: getSum(constantsrightValues) - getSum(constantsleftValues),
+        step2Answer: getSum(xvalleftValues) - getSum(xvalrightValues),
+        finalAnswer: correctAnswer,
+        solvedAt: DateTime.now(),
+      );
+      box.add(problem);
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => FinalAnswerPage(finalAnswer: correctAnswer),
+        ),
+      );
+    } else {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Incorrect, try again.')),
       );
     }
   }
-
 
   @override
   Widget build(BuildContext context) {
@@ -784,30 +868,18 @@ void initState() {
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               const Text(
-                'Correct!',
-                style: TextStyle(
-                  fontSize: 24,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.green,
-                ),
-              ),
-              const SizedBox(height: 20),
-      
-              const Text(
                 'Step three:',
                 style: TextStyle(fontSize: 20),
               ),
               const SizedBox(height: 20),
-             findComponents(widget.equation),
+              findComponents(widget.equation),
               const SizedBox(height: 20),
-              
               const Text(
                 'Divide the blue number by the orange number. If necessary round to the nearest integer. The result is the value of x.',
                 textAlign: TextAlign.center,
                 style: TextStyle(fontSize: 15),
               ),
               const SizedBox(height: 20),
-              // Display the constants-only breakdown
               Text(
                 buildStep3Equation(),
                 style: const TextStyle(
@@ -840,13 +912,11 @@ void initState() {
     );
   }
 }
+
+// =================== FinalAnswerPage ===================
 class FinalAnswerPage extends StatelessWidget {
   final int finalAnswer;
-
-
   const FinalAnswerPage({super.key, required this.finalAnswer});
-
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -864,10 +934,3 @@ class FinalAnswerPage extends StatelessWidget {
     );
   }
 }
-
-
-
-
-
-
-
