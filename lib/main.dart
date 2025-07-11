@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:path_provider/path_provider.dart';
 import 'models/solvedproblem.dart';
-import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 // Importing the necessary packages for the OCR which are taken from https://pub.dev/packages/google_mlkit_text_recognition
 import 'package:image_picker/image_picker.dart';
@@ -27,7 +26,6 @@ void main() async {
   runApp(const MyApp());
 }
 
-  @override
 // OCR scanner- extracts text from images selected by the user
 class OCRScanner extends StatefulWidget {
   const OCRScanner({Key? key}) : super(key: key);
