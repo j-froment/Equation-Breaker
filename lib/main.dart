@@ -433,6 +433,8 @@ class _TextBoxExampleState extends State<TextBoxExample> {
   File? selectedMedia;
   String extractedText = "";
   List<SolvedProblem> history = [];
+  String? selectedEquation;
+  String? selectedEquationToDelete;
 
   @override
   void initState() {
@@ -497,31 +499,93 @@ String equation = simplifySigns(simplifyEquation(simplifyMultiplication(rawInput
               "Past Problems",
               style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
             ),
-            Expanded(
-              child: history.isEmpty
-                  ? const Center(child: Text("No problems solved yet."))
-                  : ListView.builder(
-                      itemCount: history.length,
-                      itemBuilder: (context, index) {
-                        final problem = history[index];
-                        return ListTile(
-                          title: Text(problem.equation),
-                          subtitle: Text("x = ${problem.finalAnswer}"),
-                          onTap: () {
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (_) =>
-                                EquationPage(equation: problem.equation,
-        correctAnswerOverride: problem.step1Answer, 
-      ),
-                              
-                              ),
-                            );
-                          },
-                        );
-                      },
+           
+            DropdownButton<String>(
+              isExpanded: true,
+              hint: const Text("Select a past problem"),
+              value: selectedEquation,
+              items: history.map((problem) {
+                return DropdownMenuItem<String>(
+                  value: problem.equation,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(problem.equation, style: const TextStyle(fontSize: 16)),
+                      Text("Answer = ${problem.finalAnswer}", style: const TextStyle(fontSize: 14, color: Color.fromARGB(255, 158, 158, 158))),
+                    ],
+                  ),
+                );
+              }).toList(),
+              onChanged: (value) {
+                setState(() {
+                  selectedEquation = value;
+                });
+                final selectedProblem = history.firstWhere((p) => p.equation == value);
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => EquationPage(
+                      equation: selectedProblem.equation,
+                      correctAnswerOverride: selectedProblem.step1Answer,
                     ),
+                  ),
+                );
+              },
+            ),
+            const SizedBox(height: 20),
+            const Text(
+              "Delete a Past Problem",
+              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
+            ),
+            DropdownButton<String>(
+              isExpanded: true,
+              hint: const Text("Select a problem to delete"),
+              value: selectedEquationToDelete,
+              items: history.map((problem) {
+                return DropdownMenuItem<String>(
+                  value: problem.equation,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(problem.equation, style: const TextStyle(fontSize: 16)),
+                      Text("Answer = ${problem.finalAnswer}", style: const TextStyle(fontSize: 14, color: Color.fromARGB(255, 230, 8, 8))),
+                    ],
+                  ),
+                );
+              }).toList(),
+              onChanged: (value) {
+                setState(() {
+                  selectedEquationToDelete = value;
+                });
+              },
+            ),
+            ElevatedButton(
+              onPressed: selectedEquationToDelete == null
+                  ? null
+                  : () {
+                      final box = Hive.box<SolvedProblem>('solved_problems');
+                      final toDelete = box.values.firstWhere(
+                        (p) => p.equation == selectedEquationToDelete,
+                        orElse: () => SolvedProblem(
+                          equation: '',
+                          step1Answer: 0,
+                          step2Answer: 0,
+                          finalAnswer: 0,
+                          solvedAt: DateTime.now(),
+                        ),
+                      );
+                      final key = box.keyAt(box.values.toList().indexOf(toDelete));
+                      box.delete(key);
+                      setState(() {
+                        selectedEquationToDelete = null;
+                        loadHistory();
+                      });
+                    },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.red,
+                foregroundColor: Colors.white,
+              ),
+              child: const Text('Delete Selected Problem'),
             ),
           ],
         ),
@@ -840,7 +904,16 @@ class _StepThreePageState extends State<StepThreePage> {
         finalAnswer: correctAnswer,
         solvedAt: DateTime.now(),
       );
+      // Check for duplicate before adding
+    final alreadyExists = box.values.any((p) =>
+      p.equation == widget.equation &&
+      p.finalAnswer == correctAnswer
+    );
+
+    if (!alreadyExists) {
       box.add(problem);
+    }
+
       Navigator.push(
         context,
         MaterialPageRoute(
