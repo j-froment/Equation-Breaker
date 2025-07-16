@@ -3,14 +3,16 @@ import 'package:flutter/material.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:path_provider/path_provider.dart';
 import 'models/solvedproblem.dart';
+import 'package:flutter/services.dart';
+// Importing the necessary packages for the OCR which are taken from https://pub.dev/packages/google_mlkit_text_recognition
+import 'package:image_picker/image_picker.dart';
+import 'package:google_mlkit_text_recognition/google_mlkit_text_recognition.dart';
 
-// Global Lists to store character indices of x terms and constants on each side
 List<int> xvalleft = [];
 List<int> constantsleft = [];
 List<int> xvalright = [];
 List<int> constantsright = [];
 
-// Global Lists to store string representations of extracted x terms and constants
 List<String> constantsleftValues = [];
 List<String> constantsrightValues = [];
 List<String> xvalleftValues = [];
@@ -19,12 +21,101 @@ List<String> xvalrightValues = [];
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Hive.initFlutter();
-  
-  //final appDocumentDir = await getApplicationDocumentsDirectory();
- // Hive.init(appDocumentDir.path);
   Hive.registerAdapter(SolvedProblemAdapter());
   await Hive.openBox<SolvedProblem>('solved_problems');
   runApp(const MyApp());
+}
+
+// OCR scanner- extracts text from images selected by the user
+class OCRScanner extends StatefulWidget {
+  const OCRScanner({Key? key}) : super(key: key);
+
+  @override
+  State<OCRScanner> createState() => _OCRScannerState();
+}
+
+class _OCRScannerState extends State<OCRScanner> {
+  final ImagePicker _picker = ImagePicker();
+  late final TextRecognizer _textRecognizer;
+
+  String _recognizedText = '';
+  File? _selectedImage;
+
+  @override
+  void initState() {
+    super.initState();
+    _textRecognizer = TextRecognizer(script: TextRecognitionScript.latin);
+  }
+
+  @override
+  void dispose() {
+    _textRecognizer.close();
+    super.dispose();
+  }
+
+  Future<void> _pickImage() async {
+    final pickedFile = await _picker.pickImage(source: ImageSource.gallery);
+    if (pickedFile == null) return;
+
+    final file = File(pickedFile.path);
+    setState(() {
+      _selectedImage = file;
+      _recognizedText = 'Processing...';
+    });
+
+    final inputImage = InputImage.fromFile(file);
+    final RecognizedText recognizedText =
+        await _textRecognizer.processImage(inputImage);
+
+    setState(() {
+      _recognizedText = recognizedText.text;
+    });
+  }
+
+  void _returnText() {
+    Navigator.pop(context, _recognizedText);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('OCR App')),
+      body: Padding(
+        padding: const EdgeInsets.all(16),
+        child: ListView(
+          children: [
+            Align(
+              alignment: Alignment.centerLeft,
+              child: ElevatedButton(
+                onPressed: _pickImage,
+                child: const Text('Pick Image'),
+              ),
+            ),
+            const SizedBox(height: 16),
+            if (_selectedImage != null) Image.file(_selectedImage!),
+            const SizedBox(height: 20),
+            Row(
+              children: [
+                const Expanded(
+                  child: Text(
+                    'Recognized Text:',
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            Text(_recognizedText),
+            const SizedBox(height: 20),
+            ElevatedButton(
+              onPressed: _recognizedText.isNotEmpty ? _returnText : null,
+              child: const Text('Use this text'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }
 
 class MyApp extends StatelessWidget {
@@ -43,12 +134,9 @@ class MyApp extends StatelessWidget {
   }
 }
 
-// =================== Utility Functions ===================
-
 /// Parses an algebraic equation to identify x terms and constants on both sides.
 /// It also colors x terms as blue and constants as orange.
 /// @param equation The input algebraic equation as a string.
-/// @return A RichText widget displaying the formatted equation.
 Widget findComponents(String equation) {
   xvalleft.clear();
   constantsleft.clear();
@@ -59,7 +147,6 @@ Widget findComponents(String equation) {
   xvalleftValues.clear();
   xvalrightValues.clear();
 
-  // Remove whitespace and split the equation into left and right sides
   equation = equation.replaceAll(' ', '');
   var left = "", right = "";
 
@@ -72,7 +159,6 @@ Widget findComponents(String equation) {
     }
   }
 
-  // LEFT SIDE
   int j = 0;
   while (j < left.length) {
     if (isNumeric(left[j]) || (left[j] == '-' && j + 1 < left.length && isNumeric(left[j + 1]))) {
@@ -107,7 +193,6 @@ Widget findComponents(String equation) {
     }
   }
 
-  // RIGHT SIDE
   int i = 0;
   while (i < right.length) {
     if (isNumeric(right[i]) || (right[i] == '-' && i + 1 < right.length && isNumeric(right[i + 1]))) {
@@ -142,7 +227,6 @@ Widget findComponents(String equation) {
     }
   }
 
-  // Format equation with term spacing
   String formattedEquation = '';
   final buffer = StringBuffer();
   int k = 0;
@@ -162,7 +246,6 @@ Widget findComponents(String equation) {
   }
   formattedEquation = buffer.toString();
 
-  // Coloring based on original index
   List<InlineSpan> spans = [];
   int rawIndex = 0;
   for (int idx = 0; idx < formattedEquation.length; idx++) {
@@ -196,7 +279,6 @@ Widget findComponents(String equation) {
   );
 }
 
-/// Adds spacing around operators (+, -, =) in an equation string
 String addSpacesBetweenTerms(String eq) {
   String result = '';
   int i = 0;
@@ -289,7 +371,6 @@ String simplifyEquation(String equations) {
     }
   }
 
-  // Handle parentheses and distribute multipliers
   for (int i = 0; i < equation.length; i++) {
     if (equation[i] == '(') {
       if (i == 0 ||
@@ -310,7 +391,6 @@ String simplifyEquation(String equations) {
     }
   }
 
-  // Distribute inside parentheses
   for (int i = startIndex.length - 1; i >= 0; i--) {
     int start = startIndex[i];
     int end = endIndex[i];
@@ -409,19 +489,16 @@ String simplifyMultiplication(String equations) {
   return equationReturning;
 }
 
-/// Checks if the given string is a valid number (integer or decimal)
 bool isNumeric(String s) {
   return double.tryParse(s) != null;
 }
 
-/// Checks if a single-character string is a letter (A-Z or a-z) using ASCII values.
 bool isLetter(String s) {
   if (s.length != 1) return false;
   int codeUnit = s.codeUnitAt(0);
   return (codeUnit >= 65 && codeUnit <= 90) || (codeUnit >= 97 && codeUnit <= 122);
 }
 
-// =================== TextBoxExample ===================
 class TextBoxExample extends StatefulWidget {
   const TextBoxExample({super.key});
   @override
@@ -430,6 +507,7 @@ class TextBoxExample extends StatefulWidget {
 
 class _TextBoxExampleState extends State<TextBoxExample> {
   final TextEditingController _controller = TextEditingController();
+  final FocusNode _focusNode = FocusNode();
   File? selectedMedia;
   String extractedText = "";
   List<SolvedProblem> history = [];
@@ -449,10 +527,22 @@ class _TextBoxExampleState extends State<TextBoxExample> {
     });
   }
 
+  Future<void> _openOCRScanner() async {
+    final result = await Navigator.push(
+      context,
+      MaterialPageRoute(builder: (context) => const OCRScanner()),
+    );
+    if (result is String && result.isNotEmpty) {
+      setState(() {
+        _controller.text = result;
+      });
+      FocusScope.of(context).requestFocus(_focusNode);
+    }
+  }
+
   void _goToNewPage() {
-    //String equation = _controller.text;
     String rawInput = _controller.text;
-String equation = simplifySigns(simplifyEquation(simplifyMultiplication(rawInput)));
+    String equation = simplifySigns(simplifyEquation(simplifyMultiplication(rawInput)));
     Navigator.push(
       context,
       MaterialPageRoute(
@@ -474,10 +564,16 @@ String equation = simplifySigns(simplifyEquation(simplifyMultiplication(rawInput
           children: [
             TextField(
               controller: _controller,
+              focusNode: _focusNode,
               decoration: const InputDecoration(
                 border: OutlineInputBorder(),
                 labelText: 'Type equation here:',
               ),
+            ),
+            const SizedBox(height: 10),
+            ElevatedButton(
+              onPressed: _openOCRScanner,
+              child: const Text('Pick Image from Gallery'),
             ),
             const SizedBox(height: 20),
             ElevatedButton(
@@ -594,7 +690,6 @@ String equation = simplifySigns(simplifyEquation(simplifyMultiplication(rawInput
   }
 }
 
-// =================== EquationPage ===================
 class EquationPage extends StatefulWidget {
   final String equation;
   final int? correctAnswerOverride;
@@ -710,7 +805,6 @@ class _EquationPageState extends State<EquationPage> {
   }
 }
 
-// =================== StepTwoPage ===================
 class StepTwoPage extends StatefulWidget {
   final String equation;
   final int? correctAnswerOverride;
@@ -727,7 +821,6 @@ class _StepTwoPageState extends State<StepTwoPage> {
     return values.fold(0, (sum, val) => sum + (int.tryParse(val) ?? 0));
   }
 
-  // Helper to compute step 3 answer
   int getStep3Answer() {
     int step1Right = getSum(constantsrightValues);
     int step1Left = getSum(constantsleftValues);
@@ -841,7 +934,6 @@ class _StepTwoPageState extends State<StepTwoPage> {
   }
 }
 
-// =================== StepThreePage ===================
 class StepThreePage extends StatefulWidget {
   final String equation;
   final int? correctAnswerOverride;
@@ -986,7 +1078,6 @@ class _StepThreePageState extends State<StepThreePage> {
   }
 }
 
-// =================== FinalAnswerPage ===================
 class FinalAnswerPage extends StatelessWidget {
   final int finalAnswer;
   const FinalAnswerPage({super.key, required this.finalAnswer});
