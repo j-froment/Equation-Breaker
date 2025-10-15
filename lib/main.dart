@@ -133,6 +133,279 @@ class MyApp extends StatelessWidget {
     );
   }
 }
+String solutionStatus(int b, int a) {
+  if (a == 0 && b == 0) return 'Infinitely many solutions';
+  if (a == 0 && b != 0) return 'No solution';
+  
+  return '';
+}
+int gcd(int a, int b) => b == 0 ? a.abs() : gcd(b, a % b);
+// ---------- FRACTIONS & LCM ----------
+int lcm(int a, int b) => (a == 0 || b == 0) ? 0 : (a ~/ gcd(a, b)) * b;
+
+class Frac {
+  int n; // numerator
+  int d; // denominator (always > 0)
+  Frac([this.n = 0, this.d = 1]) {
+    if (d == 0) throw ArgumentError('denominator 0');
+    _norm();
+  }
+  void _norm() {
+    if (d < 0) { n = -n; d = -d; }
+    final g = gcd(n.abs(), d);
+    if (g != 0) { n ~/= g; d ~/= g; }
+  }
+  Frac operator +(Frac o) => Frac(n * o.d + o.n * d, d * o.d);
+  Frac operator -(Frac o) => Frac(n * o.d - o.n * d, d * o.d);
+  Frac operator *(Frac o) => Frac(n * o.n, d * o.d);
+  Frac operator /(Frac o) {
+    if (o.n == 0) throw ArgumentError('division by zero');
+    return Frac(n * o.d, d * o.n);
+  }
+}
+
+// Linear form: a·x + c  (a and c are fractions while parsing)
+class Lin {
+  Frac a, c;
+  Lin(this.a, this.c);
+  static Lin varX() => Lin(Frac(1,1), Frac(0,1));
+  static Lin constInt(int k) => Lin(Frac(0,1), Frac(k,1));
+  static Lin constFrac(Frac f) => Lin(Frac(0,1), f);
+
+  Lin add(Lin o) => Lin(a + o.a, c + o.c);
+  Lin sub(Lin o) => Lin(a - o.a, c - o.c);
+
+  // multiply whole (a·x + c) by constant k
+  Lin scale(Frac k) => Lin(a * k, c * k);
+}
+
+// ---------- TOKENIZER ----------
+enum TokType { num, x, plus, minus, star, slash, lpar, rpar, end }
+
+class Tok {
+  final TokType t;
+  final String? lex;
+  Tok(this.t, [this.lex]);
+}
+
+class Lexer {
+  final String s;
+  int i = 0;
+  Lexer(this.s);
+
+  bool _isDigit(int c) => c >= 48 && c <= 57;
+  bool _isSpace(int c) => c == 32 || c == 9 || c == 10 || c == 13;
+
+  Tok next() {
+    while (i < s.length && _isSpace(s.codeUnitAt(i))) i++;
+    if (i >= s.length) return Tok(TokType.end);
+
+    final ch = s[i];
+
+    // signed integer literal
+    if (_isDigit(s.codeUnitAt(i)) || (ch == '-' && i+1 < s.length && _isDigit(s.codeUnitAt(i+1)))) {
+      final start = i;
+      if (ch == '-') i++;
+      while (i < s.length && _isDigit(s.codeUnitAt(i))) i++;
+      return Tok(TokType.num, s.substring(start, i));
+    }
+
+    i++;
+    switch (ch) {
+      case 'x': case 'X': return Tok(TokType.x);
+      case '+': return Tok(TokType.plus);
+      case '-': return Tok(TokType.minus);
+      case '*': return Tok(TokType.star);
+      case '/': return Tok(TokType.slash);
+      case '(': return Tok(TokType.lpar);
+      case ')': return Tok(TokType.rpar);
+      default:
+        // normalize common OCR dashes as minus
+        if (ch == '−' || ch == '–' || ch == '—') return Tok(TokType.minus);
+        // skip unknowns
+        return next();
+    }
+  }
+}
+
+// ---------- PARSER (recursive descent) ----------
+class Parser {
+  late Lexer L;
+  late Tok look;
+
+  Lin parseSide(String side) {
+    L = Lexer(side);
+    look = L.next();
+    final e = _expr();
+    _expect(TokType.end);
+    return e;
+  }
+
+  void _advance() { look = L.next(); }
+  void _expect(TokType t) {
+    if (look.t != t) throw FormatException('Unexpected token');
+    _advance();
+  }
+
+  // expr := term (('+'|'-') term)*
+  Lin _expr() {
+    var v = _term();
+    while (look.t == TokType.plus || look.t == TokType.minus) {
+      final op = look.t;
+      _advance();
+      final rhs = _term();
+      v = (op == TokType.plus) ? v.add(rhs) : v.sub(rhs);
+    }
+    return v;
+  }
+
+  // term := factor (('*'|'/') factor | implicitMult factor)*
+  Lin _term() {
+    var v = _factor();
+
+    while (true) {
+      // explicit * or /
+      if (look.t == TokType.star || look.t == TokType.slash) {
+        final op = look.t;
+        _advance();
+        final rhs = _factor();
+        v = _mulDiv(v, rhs, isDiv: op == TokType.slash);
+        continue;
+      }
+
+      // implicit multiplication: factor followed by next factor start
+      if (_startsFactor(look.t)) {
+        final rhs = _factor();
+        v = _mulDiv(v, rhs, isDiv: false);
+        continue;
+      }
+
+      break;
+    }
+    return v;
+  }
+
+  bool _startsFactor(TokType t) =>
+      t == TokType.num || t == TokType.x || t == TokType.lpar || t == TokType.minus;
+
+  // factor := number | x | '(' expr ')' | unary '-' factor
+  Lin _factor() {
+    // unary minus
+    if (look.t == TokType.minus) {
+      _advance();
+      return _factor().scale(Frac(-1,1));
+    }
+
+    if (look.t == TokType.num) {
+      final k = int.parse(look.lex!);
+      _advance();
+      return Lin.constInt(k);
+    }
+
+    if (look.t == TokType.x) {
+      _advance();
+      return Lin.varX();
+    }
+
+    if (look.t == TokType.lpar) {
+      _advance();
+      final inside = _expr();
+      _expect(TokType.rpar);
+      return inside;
+    }
+
+    throw FormatException('Bad factor');
+  }
+
+  // (a1·x + c1) (op) (a2·x + c2)
+  // only allowed to multiply/divide by a CONSTANT (no x on rhs)
+  Lin _mulDiv(Lin lhs, Lin rhs, {required bool isDiv}) {
+    final rhsIsConst = rhs.a.n == 0;
+    final lhsIsConst = lhs.a.n == 0;
+
+    if (isDiv) {
+      if (!rhsIsConst) throw FormatException('Division by an expression with x is not linear.');
+      return lhs.scale(Frac(rhs.c.d, rhs.c.n)); // multiply by reciprocal
+    } else {
+      // multiplication
+      if (rhsIsConst) return lhs.scale(rhs.c);
+      if (lhsIsConst) return rhs.scale(lhs.c);
+      // both have x -> would be quadratic
+      throw FormatException('Multiplying expressions that both include x is not linear.');
+    }
+  }
+}
+
+// Turn raw input "left=right" into canonical "Ax= B" with integers
+String canonicalizeEquation(String input) {
+  final s = input.replaceAll(' ', '');
+  final parts = s.split('=');
+  if (parts.length != 2) throw FormatException('Equation must have exactly one "="');
+
+  final p = Parser();
+  final L = p.parseSide(parts[0]); // aL x + cL
+  final R = p.parseSide(parts[1]); // aR x + cR
+
+  // Move everything to the left: (aL-aR)·x + (cL-cR) = 0
+  final A = L.a - R.a;
+  final C = L.c - R.c;
+
+  // Clear denominators to get integers
+  var D = 1;
+  D = lcm(D, A.d);
+  D = lcm(D, C.d);
+  if (D == 0) D = 1;
+
+  final Ai = A.n * (D ~/ A.d);
+  final Ci = C.n * (D ~/ C.d);
+
+  // Ax + C = 0  ->  Ax = -C
+  final Bi = -Ci;
+
+  // produce clean string your current pipeline can color & step through
+  return '${Ai}x=${Bi}';
+}
+
+class FractionRender {
+  final String text;    // e.g., "-3/4  (= -0.750)"
+  final bool isInteger; // true if denominator reduces to 1
+  final int? intValue;  // integer value when isInteger == true
+  FractionRender({required this.text, required this.isInteger, this.intValue});
+}
+
+FractionRender renderQuotient(int b, int a) {
+  if (a == 0) return FractionRender(text: '', isInteger: false);
+  final g = gcd(b, a);
+  var n = b ~/ g, d = a ~/ g;
+  if (d < 0) { n = -n; d = -d; }
+  final decimal = (b / a).toStringAsFixed(3);
+  if (d == 1) {
+    return FractionRender(text: '$n', isInteger: true, intValue: n);
+  } else {
+    return FractionRender(text: '$n/$d  (= $decimal)', isInteger: false);
+  }
+}
+int _safeParseInt(String s) => int.tryParse(s.trim()) ?? 0;
+
+List<int> _reduced(int n, int d) {
+  if (d == 0) return [n, d];
+  if (d < 0) { n = -n; d = -d; }
+  final g = gcd(n, d);
+  return [n ~/ g, d ~/ g];
+}
+
+bool _fractionsEqual(int n1, int d1, int n2, int d2) {
+  if (d1 == 0 || d2 == 0) return false;
+  final r1 = _reduced(n1, d1);
+  final r2 = _reduced(n2, d2);
+  return r1[0] == r2[0] && r1[1] == r2[1];
+}
+
+bool _decimalMatchesFraction(String decStr, int n, int d, {double tol = 1e-3}) {
+  final x = double.tryParse(decStr.trim());
+  if (x == null || d == 0) return false;
+  return (x - (n / d)).abs() <= tol;
+}
 
 /// Parses an algebraic equation to identify x terms and constants on both sides.
 /// It also colors x terms as blue and constants as orange.
@@ -498,6 +771,43 @@ bool isLetter(String s) {
   int codeUnit = s.codeUnitAt(0);
   return (codeUnit >= 65 && codeUnit <= 90) || (codeUnit >= 97 && codeUnit <= 122);
 }
+// --- normalizes "(6)(x+3)" -> "6(x+3)" so implicit-mult parser handles it
+String _normalizeNumberParens(String s) =>
+    s.replaceAllMapped(RegExp(r'\((\d+)\)\('), (m) => '${m[1]}(');
+
+// Use your simplifiers to normalize an equation string.
+// This lets us check student-typed steps without doing the work for them.
+String _canonical(String s) =>
+    simplifySigns(
+      simplifyEquation(
+        simplifyMultiplication(
+          _normalizeNumberParens(s),
+        ),
+      ),
+    ).replaceAll(' ', '');
+
+
+bool _eqCanon(String a, String b) {
+  try {
+    return _canonical(a) == _canonical(b);
+  } catch (_) {
+    return false;
+  }
+}
+
+// Build the string you’d expect after “multiply both sides by k”
+String _mulBothSides(String eq, int k) {
+  final parts = eq.replaceAll(' ', '').split('=');
+  if (parts.length != 2) throw FormatException('bad equation');
+  // was: '($k)(${parts[0]})=($k)(${parts[1]})'
+    return '$k(${parts[0]})=$k(${parts[1]})';
+
+}
+
+
+// Tiny scanners used to decide which prep steps to show
+bool _hasSlash(String s) => s.contains('/');
+bool _hasParens(String s) => s.contains('(');
 
 class TextBoxExample extends StatefulWidget {
   const TextBoxExample({super.key});
@@ -541,15 +851,13 @@ class _TextBoxExampleState extends State<TextBoxExample> {
   }
 
   void _goToNewPage() {
-    String rawInput = _controller.text;
-    String equation = simplifySigns(simplifyEquation(simplifyMultiplication(rawInput)));
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (context) => EquationPage(equation: equation),
-      ),
-    ).then((_) => loadHistory());
-  }
+  final rawInput = _controller.text;
+  Navigator.push(
+    context,
+    MaterialPageRoute(builder: (_) => PrepPage(rawInput: rawInput)),
+  ).then((_) => loadHistory());
+}
+
 
   @override
   Widget build(BuildContext context) {
@@ -685,6 +993,196 @@ class _TextBoxExampleState extends State<TextBoxExample> {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+class PrepPage extends StatefulWidget {
+  final String rawInput;
+  const PrepPage({super.key, required this.rawInput});
+
+  @override
+  State<PrepPage> createState() => _PrepPageState();
+}
+
+class _PrepPageState extends State<PrepPage> {
+  late String working; // student’s current equation string
+
+  final TextEditingController _lcmCtl = TextEditingController();
+  final TextEditingController _typedCtl = TextEditingController();
+
+  bool needFractions = false;
+  bool needParens = false;
+
+  @override
+  void initState() {
+    super.initState();
+    working = widget.rawInput.trim();
+    needFractions = _hasSlash(working);
+    needParens = _hasParens(working);
+  }
+
+  void _gotoStep1() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => EquationPage(equation: working)),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Prep: you do the setup'),
+        backgroundColor: Color.fromRGBO(236,229,243,1),
+      ),
+      body: ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
+          const Text('Start from your equation. Do each move yourself; I’ll just check it.'),
+          const SizedBox(height: 8),
+          Text('Current:  $working', style: const TextStyle(fontSize: 18)),
+
+          // ---- Step A: Clear Fractions ----
+          if (needFractions) ...[
+            const SizedBox(height: 20),
+            const Text('Step A — Clear Fractions', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+            const SizedBox(height: 6),
+            const Text('Pick an LCM that clears all denominators.'),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                SizedBox(
+                  width: 120,
+                  child: TextField(
+                    controller: _lcmCtl,
+                    keyboardType: TextInputType.number,
+                    decoration: const InputDecoration(labelText: 'LCM', border: OutlineInputBorder()),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                ElevatedButton(
+                  onPressed: () {
+  final k = int.tryParse(_lcmCtl.text);
+  if (k == null || k <= 0) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Enter a positive whole number.')),
+    );
+    return;
+  }
+
+  _typedCtl.text = '';
+  showDialog(
+    context: context,
+    builder: (_) => AlertDialog(
+      title: const Text('Type the equation after clearing fractions'),
+      content: TextField(
+        controller: _typedCtl,
+        decoration: const InputDecoration(hintText: 'e.g., 2x=15'),
+        minLines: 1,
+        maxLines: 3,
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Cancel'),
+        ),
+        ElevatedButton(
+          onPressed: () {
+            final typed = _typedCtl.text.trim();
+
+            // Build the literal multiplied line, then canonicalize to the simplified form
+            final multiplied = _mulBothSides(working, k);            // e.g. 6(x/3)=6(5/2)
+            final expectedSimplified = canonicalizeEquation(multiplied); // -> 2x=15
+
+            // Accept ONLY the simplified, fraction-free result
+            final ok = _eqCanon(typed, expectedSimplified) && !_hasSlash(typed);
+
+            if (ok) {
+              working = typed;
+              needFractions = _hasSlash(working); // should now be false
+              needParens   = _hasParens(working);
+              Navigator.pop(context);
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('Nice! Fractions cleared.')),
+              );
+              setState(() {});
+            } else {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('Enter the simplified result (like 2x=15), not 6(x/3)=6(5/2).'),
+                ),
+              );
+            }
+          },
+          child: const Text('Check'),
+        ),
+      ],
+    ),
+  );
+},
+
+                  child: const Text('Use this LCM'),
+                ),
+              ],
+            ),
+          ],
+
+          // ---- Step B: Distribute Parentheses ----
+          if (!needFractions && needParens) ...[
+            const SizedBox(height: 20),
+            const Text('Step B — Distribute Parentheses', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+            const SizedBox(height: 6),
+            const Text('Expand each k( … ). Type your new equation:'),
+            const SizedBox(height: 8),
+            TextField(
+              controller: _typedCtl,
+              minLines: 1, maxLines: 3,
+              decoration: const InputDecoration(
+                hintText: 'Type the equation after distribution',
+                border: OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 8),
+            ElevatedButton(
+              onPressed: () {
+                final typed = _typedCtl.text.trim();
+                // Accept if equivalent and parentheses are reduced
+                if (_eqCanon(typed, working)) {
+                  final before = RegExp(r'\(').allMatches(working).length;
+                  final after  = RegExp(r'\(').allMatches(typed).length;
+                  if (after <= before) {
+                    working = typed;
+                    needParens = _hasParens(working);
+                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Good distribution step!')));
+                    setState(() {});
+                  } else {
+                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Try expanding parentheses further.')));
+                  }
+                } else {
+                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('That isn’t equivalent to your previous line. Check distribution.')));
+                }
+              },
+              child: const Text('Check distribution'),
+            ),
+          ],
+
+          const SizedBox(height: 24),
+          ElevatedButton(
+            onPressed: () {
+              if (_hasSlash(working)) {
+                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Clear fractions first.')));
+                return;
+              }
+              if (_hasParens(working)) {
+                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Distribute parentheses first.')));
+                return;
+              }
+              _gotoStep1();
+            },
+            child: const Text('I’m ready for Step 1'),
+          ),
+        ],
       ),
     );
   }
@@ -945,45 +1443,55 @@ class StepThreePage extends StatefulWidget {
 class _StepThreePageState extends State<StepThreePage> {
   final TextEditingController _answerController = TextEditingController();
   int correctAnswer = 0;
+  // added controllers for fraction input
+  final TextEditingController _numCtl = TextEditingController();
+  final TextEditingController _denCtl = TextEditingController();
+  final TextEditingController _decCtl = TextEditingController(); // optional decimal
 
   int getSum(List<String> values) {
     return values.fold(0, (sum, val) => sum + (int.tryParse(val) ?? 0));
   }
 
   @override
-  void initState() {
-    super.initState();
-    findComponents(widget.equation);
+void initState() {
+  super.initState();
+  findComponents(widget.equation);
 
-    int step1Right = getSum(constantsrightValues);
-    int step1Left = getSum(constantsleftValues);
-    int step1Result = step1Right - step1Left;
+  final b = getSum(constantsrightValues) - getSum(constantsleftValues); // orange
+  final a = getSum(xvalleftValues) - getSum(xvalrightValues);           // blue
 
-    int step2Left = getSum(xvalleftValues);
-    int step2Right = getSum(xvalrightValues);
-    int step2Result = step2Left - step2Right;
+  final status = solutionStatus(b, a);
+  if (status.isNotEmpty) {
+    correctAnswer = 0;
+    _answerController.text = '';
+    return;
+  }
 
-    if (step2Result != 0) {
-      correctAnswer = (step1Result / step2Result).round();
-    } else {
-      correctAnswer = 0;
-    }
+  final frac = renderQuotient(b, a);
+  if (frac.isInteger) {
+    correctAnswer = frac.intValue!;
     if (widget.correctAnswerOverride != null) {
       _answerController.text = correctAnswer.toString();
     }
+  } else {
+    // fraction mode: no input in this step
+    correctAnswer = 0;
+    _answerController.text = '';
   }
+}
+
+
 
   String buildStep3Equation() {
-    int step1Right = getSum(constantsrightValues);
-    int step1Left = getSum(constantsleftValues);
-    int step1Result = step1Right - step1Left;
+  final b = getSum(constantsrightValues) - getSum(constantsleftValues);
+  final a = getSum(xvalleftValues) - getSum(xvalrightValues);
+  final status = solutionStatus(b, a);
+  if (status.isNotEmpty) return '$b / $a = ?';
 
-    int step2Left = getSum(xvalleftValues);
-    int step2Right = getSum(xvalrightValues);
-    int step2Result = step2Left - step2Right;
+  final frac = renderQuotient(b, a);
+  return '$b / $a = ${frac.text.isEmpty ? "?" : frac.text}';
+}
 
-    return '$step1Result / $step2Result = ?';
-  }
 
   void checkAnswer() {
     int? userAnswer = int.tryParse(_answerController.text);
@@ -1018,71 +1526,227 @@ class _StepThreePageState extends State<StepThreePage> {
       );
     }
   }
+      void _checkFractionAnswer() {
+    final b = getSum(constantsrightValues) - getSum(constantsleftValues); // orange
+    final a = getSum(xvalleftValues) - getSum(xvalrightValues);           // blue
+    if (a == 0) return;
+
+    final target = _reduced(b, a);
+    final tn = target[0], td = target[1];
+
+    final inNum = _safeParseInt(_numCtl.text);
+    final inDen = _safeParseInt(_denCtl.text);
+
+    final isFracGood = (inDen != 0) && _fractionsEqual(inNum, inDen, tn, td);
+    final isDecGood  = _decimalMatchesFraction(_decCtl.text, tn, td);
+
+    if (isFracGood || isDecGood) {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => FinalAnswerPage(
+            finalAnswerText: '$tn/$td (= ${(b / a).toStringAsFixed(3)})',
+          ),
+        ),
+      );
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Not quite—try simplifying the fraction.')),
+      );
+    }
+  
+  }
+
+
 
   @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Step Three'),
-        backgroundColor: Color.fromRGBO(236, 229, 243, 1),
-      ),
-      body: Center(
-        child: Padding(
-          padding: const EdgeInsets.all(16.0),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              const Text(
-                'Step three:',
-                style: TextStyle(fontSize: 20),
+Widget build(BuildContext context) {
+  // Compute b (orange) and a (blue)
+  final b = getSum(constantsrightValues) - getSum(constantsleftValues);
+  final a = getSum(xvalleftValues) - getSum(xvalrightValues);
+
+  // Check special cases and fraction/int mode
+  final status = solutionStatus(b, a);      // "No solution" / "Infinitely many solutions" / ""
+  final frac = renderQuotient(b, a);        // from step (3), shows simplified fraction or integer
+
+  return Scaffold(
+    appBar: AppBar(
+      title: const Text('Step Three'),
+      backgroundColor: Color.fromRGBO(236, 229, 243, 1),
+    ),
+    body: Center(
+      child: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Text(
+              'Step three:',
+              style: TextStyle(fontSize: 20),
+            ),
+            const SizedBox(height: 20),
+            findComponents(widget.equation),
+            const SizedBox(height: 20),
+
+            // ▼▼▼ INSERTED STATUS MESSAGE BLOCK (this is what you asked for) ▼▼▼
+            if (status.isNotEmpty) ...[
+              Text(
+                status, // "No solution" or "Infinitely many solutions"
+                style: const TextStyle(fontSize: 20, color: Colors.red),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 12),
+              Text(
+                '$b / $a',
+                style: const TextStyle(fontSize: 18),
+                textAlign: TextAlign.center,
               ),
               const SizedBox(height: 20),
-              findComponents(widget.equation),
-              const SizedBox(height: 20),
+              ElevatedButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Back'),
+              ),
+              // IMPORTANT: We STOP here for special cases—nothing else below will render
+            ],
+            // ▲▲▲ END STATUS MESSAGE BLOCK ▲▲▲
+
+            // Only show the normal Step 3 UI if there is no special status:
+            if (status.isEmpty) ...[
               const Text(
-                'Divide the blue number by the orange number. If necessary round to the nearest integer. The result is the value of x.',
+                // Note: flipped instruction to match a·x = b (orange ÷ blue)
+                'Divide the orange number by the blue number. '
+                'If necessary, show the result as a simplified fraction (and decimal).',
                 textAlign: TextAlign.center,
                 style: TextStyle(fontSize: 15),
               ),
               const SizedBox(height: 20),
               Text(
+                // Shows "b / a = <fraction or integer or ?>"
                 buildStep3Equation(),
                 style: const TextStyle(
                   fontSize: 24,
                   fontWeight: FontWeight.bold,
                   color: Colors.blue,
                 ),
+                textAlign: TextAlign.center,
               ),
               const SizedBox(height: 20),
-              SizedBox(
-                width: 100,
-                child: TextField(
-                  controller: _answerController,
-                  keyboardType: TextInputType.number,
-                  decoration: const InputDecoration(
-                    hintText: '?',
-                    border: OutlineInputBorder(),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 20),
-              ElevatedButton(
-                onPressed: checkAnswer,
-                child: const Text('Check Answer'),
-              ),
-            ],
+// INTEGER MODE (quiz input)
+if (frac.isInteger) ...[
+  SizedBox(
+    width: 100,
+    child: TextField(
+      controller: _answerController,
+      keyboardType: TextInputType.number,
+      textAlign: TextAlign.center,
+      decoration: const InputDecoration(
+        hintText: '?',
+        border: OutlineInputBorder(),
+      ),
+    ),
+  ),
+  const SizedBox(height: 20),
+  ElevatedButton(
+    onPressed: checkAnswer,
+    child: const Text('Check Answer'),
+  ),
+],
+
+              // INTEGER MODE (keep your quiz input)
+              // FRACTION MODE (guided input)
+if (!frac.isInteger) ...[
+  const Text(
+    'Enter x as a simplified fraction:',
+    style: TextStyle(fontSize: 16),
+    textAlign: TextAlign.center,
+  ),
+  const SizedBox(height: 10),
+
+  Row(
+    mainAxisAlignment: MainAxisAlignment.center,
+    children: [
+      SizedBox(
+        width: 90,
+        child: TextField(
+          controller: _numCtl,
+          keyboardType: TextInputType.number,
+          textAlign: TextAlign.center,
+          decoration: const InputDecoration(
+            labelText: 'numerator',
+            border: OutlineInputBorder(),
           ),
         ),
       ),
-    );
-  }
+      const Padding(
+        padding: EdgeInsets.symmetric(horizontal: 12),
+        child: Text('—', style: TextStyle(fontSize: 28)),
+      ),
+      SizedBox(
+        width: 90,
+        child: TextField(
+          controller: _denCtl,
+          keyboardType: TextInputType.number,
+          textAlign: TextAlign.center,
+          decoration: const InputDecoration(
+            labelText: 'denominator',
+            border: OutlineInputBorder(),
+          ),
+        ),
+      ),
+    ],
+  ),
+
+  const SizedBox(height: 10),
+  const Text(
+    'Tip: reduce to lowest terms (e.g., 6/8 → 3/4).',
+    style: TextStyle(fontSize: 13, color: Color.fromARGB(255, 120, 120, 120)),
+    textAlign: TextAlign.center,
+  ),
+
+  const SizedBox(height: 14),
+  SizedBox(
+    width: 160,
+    child: TextField(
+      controller: _decCtl,
+      keyboardType: const TextInputType.numberWithOptions(decimal: true, signed: true),
+      textAlign: TextAlign.center,
+      decoration: const InputDecoration(
+        labelText: 'or decimal (≈)',
+        hintText: 'e.g., 1.5',
+        border: OutlineInputBorder(),
+      ),
+    ),
+  ),
+
+  const SizedBox(height: 20),
+  ElevatedButton(
+    onPressed: _checkFractionAnswer,
+    child: const Text('Check Answer'),
+  ),
+],
+
+
+              // FRACTION MODE (no input; just continue)
+              
+            ],
+          ],
+        ),
+      ),
+    ),
+  );
+}
+
 }
 
 class FinalAnswerPage extends StatelessWidget {
-  final int finalAnswer;
-  const FinalAnswerPage({super.key, required this.finalAnswer});
+  final int? finalAnswer;        // when integer
+  final String? finalAnswerText; // when fraction or special text
+
+  const FinalAnswerPage({super.key, this.finalAnswer, this.finalAnswerText});
+
   @override
   Widget build(BuildContext context) {
+    final display = finalAnswerText ?? finalAnswer?.toString() ?? '';
     return Scaffold(
       appBar: AppBar(
         title: const Text('Result'),
@@ -1090,7 +1754,7 @@ class FinalAnswerPage extends StatelessWidget {
       ),
       body: Center(
         child: Text(
-          'Correct, the answer is $finalAnswer',
+          'Correct, the answer is $display',
           style: const TextStyle(fontSize: 28, fontWeight: FontWeight.bold, color: Colors.green),
           textAlign: TextAlign.center,
         ),
