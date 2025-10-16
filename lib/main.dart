@@ -997,6 +997,240 @@ class _TextBoxExampleState extends State<TextBoxExample> {
     );
   }
 }
+// --- UI helper: Step A card (Clear Fractions without rewriting k(·)=k(·)) ---
+class PrepLCMCard extends StatefulWidget {
+  final String working;
+  final void Function(String newWorking) onApplied;
+  const PrepLCMCard({super.key, required this.working, required this.onApplied});
+
+  @override
+  State<PrepLCMCard> createState() => _PrepLCMCardState();
+}
+
+class _PrepLCMCardState extends State<PrepLCMCard> {
+  late TextEditingController _lcmCtl;
+
+  List<int> _scanDenoms(String s) {
+    final r = RegExp(r'/\s*([0-9]+)');
+    return r.allMatches(s).map((m) => int.tryParse(m.group(1)!) ?? 1).where((x) => x > 1).toList();
+  }
+
+  int _lcmAll(Iterable<int> xs) {
+    int res = 1;
+    for (final v in xs) {
+      res = lcm(res, v);
+    }
+    return res <= 0 ? 1 : res;
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    final denoms = _scanDenoms(widget.working);
+    final guess = denoms.isEmpty ? 1 : _lcmAll(denoms);
+    _lcmCtl = TextEditingController(text: guess.toString());
+  }
+
+  @override
+  void dispose() {
+    _lcmCtl.dispose();
+    super.dispose();
+  }
+
+ void _applyLCM() {
+  final k = int.tryParse(_lcmCtl.text);
+  if (k == null || k <= 0) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Enter a positive LCM.')),
+    );
+    return;
+  }
+
+  try {
+    // Build the raw "k(left)=k(right)" line you expect after multiplying.
+    final multiplied = _mulBothSides(widget.working, k); // e.g., 12(x/3)=12(5/4)
+
+    final typedCtl = TextEditingController();
+    showDialog(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Type the equation after clearing fractions'),
+        content: TextField(
+          controller: typedCtl,
+          decoration: const InputDecoration(
+            hintText: 'e.g., 3(x+3)=4(2x-1)',
+          ),
+          minLines: 1, maxLines: 3,
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              final typed = typedCtl.text.trim();
+
+              // Must be equivalent to the ×LCM line (order/spacing/parentheses can differ)
+              bool sameAsMultiplied;
+try {
+  sameAsMultiplied = canonicalizeEquation(typed) == canonicalizeEquation(multiplied);
+} catch (_) {
+  sameAsMultiplied = false;
+}
+
+
+              // Fractions must be gone now (no slashes anywhere)
+              final noFractions = !_hasSlash(typed);
+
+              if (sameAsMultiplied && noFractions) {
+                // Accept Step A. Keep their parentheses so Step B can ask to distribute.
+                widget.onApplied(typed);
+                Navigator.pop(context);
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Great — fractions cleared. Now distribute parentheses.')),
+                );
+              } else {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Make sure your line matches after ×LCM and has no fractions (slashes).'),
+                  ),
+                );
+              }
+            },
+            child: const Text('Check'),
+          ),
+        ],
+      ),
+    );
+  } catch (e) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Couldn’t clear: $e')),
+    );
+  }
+}
+
+
+
+
+  @override
+  Widget build(BuildContext context) {
+    final denoms = _scanDenoms(widget.working);
+    return Card(
+      margin: const EdgeInsets.only(top: 16),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('Step A — Clear Fractions', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+            const SizedBox(height: 8),
+            if (denoms.isNotEmpty) Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                const Text('Denominators seen:'),
+                ...denoms.map((d) => Chip(label: Text(d.toString()))),
+              ],
+            ) else const Text('No denominators detected.'),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                SizedBox(
+                  width: 120,
+                  child: TextField(
+                    controller: _lcmCtl,
+                    keyboardType: TextInputType.number,
+                    decoration: const InputDecoration(labelText: 'LCM', border: OutlineInputBorder()),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                ElevatedButton(onPressed: _applyLCM, child: const Text('Apply ×LCM')),
+              ],
+            ),
+            const SizedBox(height: 8),
+            const Text('This will multiply both sides by LCM and simplify automatically (no need to retype k(…)=k(…)).'),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// --- UI helper: Step B card (Distribute Parentheses) ---
+class DistributeCard extends StatefulWidget {
+  final String working;
+  final void Function(String newWorking) onDistributed;
+  const DistributeCard({super.key, required this.working, required this.onDistributed});
+
+  @override
+  State<DistributeCard> createState() => _DistributeCardState();
+}
+
+class _DistributeCardState extends State<DistributeCard> {
+  final _typedCtl = TextEditingController();
+
+  @override
+  void dispose() {
+    _typedCtl.dispose();
+    super.dispose();
+  }
+
+  void _check() {
+    final typed = _typedCtl.text.trim();
+    if (typed.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Type your distributed line.')));
+      return;
+    }
+    // Must be equivalent AND reduce (or keep, not increase) parentheses count
+    final eqOK = _eqCanon(typed, widget.working);
+    final before = RegExp(r'\(').allMatches(widget.working).length;
+    final after  = RegExp(r'\(').allMatches(typed).length;
+
+    if (eqOK && after <= before) {
+      widget.onDistributed(typed);
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Good distribution step!')));
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Not quite—distribute again or check signs.')));
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      margin: const EdgeInsets.only(top: 16),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('Step B — Distribute Parentheses', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+            const SizedBox(height: 8),
+            const Text('Expand k( … ) → k·… and simplify.'),
+            const SizedBox(height: 10),
+            TextField(
+              controller: _typedCtl,
+              minLines: 1, maxLines: 3,
+              decoration: const InputDecoration(
+                hintText: 'Type your next line after distributing',
+                border: OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                ElevatedButton(onPressed: _check, child: const Text('Check distribution')),
+                const SizedBox(width: 12),
+                Text('Start:  ${' ' + widget.working}', style: const TextStyle(fontStyle: FontStyle.italic)),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class PrepPage extends StatefulWidget {
   final String rawInput;
   const PrepPage({super.key, required this.rawInput});
@@ -1008,8 +1242,6 @@ class PrepPage extends StatefulWidget {
 class _PrepPageState extends State<PrepPage> {
   late String working; // student’s current equation string
 
-  final TextEditingController _lcmCtl = TextEditingController();
-  final TextEditingController _typedCtl = TextEditingController();
 
   bool needFractions = false;
   bool needParens = false;
@@ -1045,127 +1277,35 @@ class _PrepPageState extends State<PrepPage> {
 
           // ---- Step A: Clear Fractions ----
           if (needFractions) ...[
-            const SizedBox(height: 20),
-            const Text('Step A — Clear Fractions', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-            const SizedBox(height: 6),
-            const Text('Pick an LCM that clears all denominators.'),
-            const SizedBox(height: 8),
-            Row(
-              children: [
-                SizedBox(
-                  width: 120,
-                  child: TextField(
-                    controller: _lcmCtl,
-                    keyboardType: TextInputType.number,
-                    decoration: const InputDecoration(labelText: 'LCM', border: OutlineInputBorder()),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                ElevatedButton(
-                  onPressed: () {
-  final k = int.tryParse(_lcmCtl.text);
-  if (k == null || k <= 0) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Enter a positive whole number.')),
-    );
-    return;
-  }
+  PrepLCMCard(
+    working: working,
+    onApplied: (newWorking) {
+      setState(() {
+        working = newWorking;
+        // keep your existing flags in sync with the step’s result
+        needFractions = _hasSlash(working); // may still be true if user kept fractions
+        needParens   = _hasParens(working);
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Nice! Fractions step accepted.')),
+      );
+    },
+  ),
+],
 
-  _typedCtl.text = '';
-  showDialog(
-    context: context,
-    builder: (_) => AlertDialog(
-      title: const Text('Type the equation after clearing fractions'),
-      content: TextField(
-        controller: _typedCtl,
-        decoration: const InputDecoration(hintText: 'e.g., 2x=15'),
-        minLines: 1,
-        maxLines: 3,
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(context),
-          child: const Text('Cancel'),
-        ),
-        ElevatedButton(
-          onPressed: () {
-            final typed = _typedCtl.text.trim();
-
-            // Build the literal multiplied line, then canonicalize to the simplified form
-            final multiplied = _mulBothSides(working, k);            // e.g. 6(x/3)=6(5/2)
-            final expectedSimplified = canonicalizeEquation(multiplied); // -> 2x=15
-
-            // Accept ONLY the simplified, fraction-free result
-            final ok = _eqCanon(typed, expectedSimplified) && !_hasSlash(typed);
-
-            if (ok) {
-              working = typed;
-              needFractions = _hasSlash(working); // should now be false
-              needParens   = _hasParens(working);
-              Navigator.pop(context);
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Nice! Fractions cleared.')),
-              );
-              setState(() {});
-            } else {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('Enter the simplified result (like 2x=15), not 6(x/3)=6(5/2).'),
-                ),
-              );
-            }
-          },
-          child: const Text('Check'),
-        ),
-      ],
-    ),
-  );
-},
-
-                  child: const Text('Use this LCM'),
-                ),
-              ],
-            ),
-          ],
 
           // ---- Step B: Distribute Parentheses ----
-          if (!needFractions && needParens) ...[
-            const SizedBox(height: 20),
-            const Text('Step B — Distribute Parentheses', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-            const SizedBox(height: 6),
-            const Text('Expand each k( … ). Type your new equation:'),
-            const SizedBox(height: 8),
-            TextField(
-              controller: _typedCtl,
-              minLines: 1, maxLines: 3,
-              decoration: const InputDecoration(
-                hintText: 'Type the equation after distribution',
-                border: OutlineInputBorder(),
-              ),
-            ),
-            const SizedBox(height: 8),
-            ElevatedButton(
-              onPressed: () {
-                final typed = _typedCtl.text.trim();
-                // Accept if equivalent and parentheses are reduced
-                if (_eqCanon(typed, working)) {
-                  final before = RegExp(r'\(').allMatches(working).length;
-                  final after  = RegExp(r'\(').allMatches(typed).length;
-                  if (after <= before) {
-                    working = typed;
-                    needParens = _hasParens(working);
-                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Good distribution step!')));
-                    setState(() {});
-                  } else {
-                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Try expanding parentheses further.')));
-                  }
-                } else {
-                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('That isn’t equivalent to your previous line. Check distribution.')));
-                }
-              },
-              child: const Text('Check distribution'),
-            ),
-          ],
+          if (!needFractions && needParens)
+  DistributeCard(
+    working: working,
+    onDistributed: (newWorking) {
+      setState(() {
+        working = newWorking;
+        needParens = _hasParens(working);
+      });
+    },
+  ),
+
 
           const SizedBox(height: 24),
           ElevatedButton(
