@@ -8,6 +8,8 @@ import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:google_mlkit_text_recognition/google_mlkit_text_recognition.dart';
 
+const kOrange = Color.fromARGB(255, 255, 149, 0);
+
 List<int> xvalleft = [];
 List<int> constantsleft = [];
 List<int> xvalright = [];
@@ -1327,6 +1329,102 @@ class _PrepPageState extends State<PrepPage> {
     );
   }
 }
+// ---------- Reusable UI helpers for clear instructions & visuals ----------
+
+class LegendBar extends StatelessWidget {
+  const LegendBar({super.key});
+  @override
+  Widget build(BuildContext context) {
+    return Wrap(
+      spacing: 10,
+      crossAxisAlignment: WrapCrossAlignment.center,
+      children: const [
+        _LegendDot(color: Color.fromARGB(255, 255, 149, 0), label: 'orange = constants'),
+        _LegendDot(color: Colors.blue, label: 'blue = x-coefficients'),
+      ],
+    );
+  }
+}
+
+class _LegendDot extends StatelessWidget {
+  final Color color;
+  final String label;
+  const _LegendDot({required this.color, required this.label});
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(width: 14, height: 14, decoration: BoxDecoration(color: color, shape: BoxShape.circle)),
+        const SizedBox(width: 6),
+        Text(label, style: const TextStyle(fontSize: 13)),
+      ],
+    );
+  }
+}
+
+class InstructionBanner extends StatelessWidget {
+  final String title;
+  final List<String> bullets;
+  const InstructionBanner({super.key, required this.title, required this.bullets});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.only(top: 12),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF4F1FA),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFE3DAF3)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(title, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
+          const SizedBox(height: 6),
+          ...bullets.map((b) => Padding(
+                padding: const EdgeInsets.only(bottom: 4),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text('•  ', style: TextStyle(fontSize: 16)),
+                    Expanded(child: Text(b, style: const TextStyle(fontSize: 14))),
+                  ],
+                ),
+              )),
+        ],
+      ),
+    );
+  }
+}
+
+class ExampleCard extends StatelessWidget {
+  final String caption;
+  final Widget body;
+  const ExampleCard({super.key, required this.caption, required this.body});
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      margin: const EdgeInsets.only(top: 12),
+      elevation: 0,
+      color: const Color(0xFFFDFBFF),
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(caption, style: const TextStyle(fontSize: 13, color: Colors.black54)),
+            const SizedBox(height: 8),
+            body,
+          ],
+        ),
+      ),
+    );
+  }
+}
 
 class EquationPage extends StatefulWidget {
   final String equation;
@@ -1408,6 +1506,37 @@ class _EquationPageState extends State<EquationPage> {
                 style: TextStyle(fontSize: 20),
               ),
               findComponents(widget.equation),
+              const SizedBox(height: 10),
+const LegendBar(),
+InstructionBanner(
+  title: 'What to do',
+  bullets: [
+    'Add the orange numbers on the RIGHT.',
+    'Subtract the orange numbers on the LEFT from that sum.',
+    'Type the total in the box.',
+  ],
+),
+ExampleCard(
+  caption: 'Example',
+  body: RichText(
+    text: const TextSpan(
+      style: TextStyle(fontSize: 18, color: Colors.black),
+      children: [
+        TextSpan(text: 'On  '),
+        TextSpan(text: '3x + '),
+        TextSpan(text: '5', style: TextStyle(color: Color.fromARGB(255, 255, 149, 0))),
+        TextSpan(text: '  =  '),
+        TextSpan(text: '17', style: TextStyle(color: Color.fromARGB(255, 255, 149, 0))),
+        TextSpan(text: ', do  '),
+        TextSpan(text: '17 ' , style: TextStyle(color: Color.fromARGB(255, 255, 149, 0))),
+        TextSpan(text: '− '),
+        TextSpan(text: '5'  , style: TextStyle(color: Color.fromARGB(255, 255, 149, 0))),
+        TextSpan(text: '  =  12'),
+      ],
+    ),
+  ),
+),
+
               const SizedBox(height: 20),
               const Text(
                 'Add all the orange numbers on the right side together. Then subtract the orange numbers on the left side from that sum.',
@@ -1532,6 +1661,35 @@ class _StepTwoPageState extends State<StepTwoPage> {
               ),
               const SizedBox(height: 20),
               findComponents(widget.equation),
+              const SizedBox(height: 10),
+const LegendBar(),
+InstructionBanner(
+  title: 'What to do',
+  bullets: [
+    'Add the blue numbers on the LEFT (x-coefficients).',
+    'Subtract the blue numbers on the RIGHT.',
+    'Type the result (this is the BLUE total a).',
+  ],
+),
+ExampleCard(
+  caption: 'Example',
+  body: RichText(
+    text: const TextSpan(
+      style: TextStyle(fontSize: 18, color: Colors.black),
+      children: [
+        TextSpan(text: '2x', style: TextStyle(color: Colors.blue)),
+        TextSpan(text: '  +  7  =  '),
+        TextSpan(text: 'x', style: TextStyle(color: Colors.blue)),
+        TextSpan(text: '  +  9   →   '),
+        TextSpan(text: '2', style: TextStyle(color: Colors.blue)),
+        TextSpan(text: '  −  '),
+        TextSpan(text: '1', style: TextStyle(color: Colors.blue)),
+        TextSpan(text: '  =  1'),
+      ],
+    ),
+  ),
+),
+
               const SizedBox(height: 20),
               const Text(
                 'Add all the blue numbers on the left side together. Then subtract the blue numbers on the right side from that sum.',
@@ -1700,6 +1858,7 @@ void initState() {
 
 
   @override
+  
 Widget build(BuildContext context) {
   // Compute b (orange) and a (blue)
   final b = getSum(constantsrightValues) - getSum(constantsleftValues);
@@ -1737,10 +1896,11 @@ Widget build(BuildContext context) {
               ),
               const SizedBox(height: 12),
               Text(
-                '$b / $a',
-                style: const TextStyle(fontSize: 18),
-                textAlign: TextAlign.center,
-              ),
+  '$b / $a',
+  style: const TextStyle(fontSize: 18),
+  textAlign: TextAlign.center,
+),
+
               const SizedBox(height: 20),
               ElevatedButton(
                 onPressed: () => Navigator.pop(context),
@@ -1753,24 +1913,63 @@ Widget build(BuildContext context) {
             // Only show the normal Step 3 UI if there is no special status:
             if (status.isEmpty) ...[
               const Text(
-                // Note: flipped instruction to match a·x = b (orange ÷ blue)
-                'Divide the orange number by the blue number. '
-                'If necessary, show the result as a simplified fraction (and decimal).',
-                textAlign: TextAlign.center,
-                style: TextStyle(fontSize: 15),
-              ),
-              const SizedBox(height: 20),
-              Text(
-                // Shows "b / a = <fraction or integer or ?>"
-                buildStep3Equation(),
-                style: const TextStyle(
-                  fontSize: 24,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.blue,
-                ),
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 20),
+  // Note: flipped instruction to match a·x = b (orange ÷ blue)
+  'Divide the orange number by the blue number. '
+  'If necessary, show the result as a simplified fraction (and decimal).',
+  textAlign: TextAlign.center,
+  style: TextStyle(fontSize: 15),
+),
+const SizedBox(height: 20),
+
+// 👇 These are separate children of the Column (NOT inside Text)
+const SizedBox(height: 10),
+const LegendBar(),
+InstructionBanner(
+  title: 'What to do',
+  bullets: [
+    'Take the ORANGE total (from Step 1) and divide by the BLUE total (from Step 2).',
+    'If it isn’t a whole number, enter a simplified fraction (and optional decimal).',
+  ],
+),
+ExampleCard(
+  caption: 'Visual',
+  body: Row(
+    mainAxisAlignment: MainAxisAlignment.center,
+    children: const [
+      Text('orange ÷ blue  →  ', style: TextStyle(fontSize: 18)),
+      Text('b', style: TextStyle(fontSize: 22, color: Color.fromARGB(255, 255, 149, 0))),
+      Text('  /  ', style: TextStyle(fontSize: 18)),
+      Text('a', style: TextStyle(fontSize: 22, color: Colors.blue)),
+    ],
+  ),
+),
+const SizedBox(height: 12),
+
+// Now your equation preview
+RichText(
+  textAlign: TextAlign.center,
+  text: TextSpan(
+    style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Colors.black),
+    children: [
+      // b / a
+      TextSpan(text: '$b', style: const TextStyle(color: kOrange)),
+      const TextSpan(text: ' / '),
+      TextSpan(text: '$a', style: const TextStyle(color: Colors.blue)),
+
+      // Optional “= …” part to match your example behavior:
+      // Show only if you already computed a displayable result.
+      if (frac.text.isNotEmpty) const TextSpan(text: '  =  '),
+      if (frac.isInteger)
+        TextSpan(text: '${frac.intValue}')
+      else if (frac.text.isNotEmpty)
+        TextSpan(text: frac.text), // e.g., "-3/4  (= -0.750)"
+    ],
+  ),
+),
+
+const SizedBox(height: 20),
+
+              
 // INTEGER MODE (quiz input)
 if (frac.isInteger) ...[
   SizedBox(
