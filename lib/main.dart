@@ -648,8 +648,8 @@ String simplifyEquation(String equations) {
 
   for (int i = 0; i < equation.length; i++) {
     if (equation[i] == '(') {
-      if (i == 0 ||
-          !(isInteger(equation[i - 1]) || equation[i - 1].endsWith('x'))) {
+      if (i == 0 || !isInteger(equation[i - 1])) {
+
         if (i > 0 && equation[i - 1] == '-') {
           multiplier.add(-1);
           equation[i - 1] = 'SKIP';
@@ -679,13 +679,15 @@ String simplifyEquation(String equations) {
       } else if (isInteger(val)) {
         int value = int.parse(val);
         distributed.add((value * mult).toString());
-      } else if (val.endsWith('x')) {
-        String coef = val.replaceAll('x', '');
-        if (coef == '') coef = '1';
-        if (coef == '-') coef = '-1';
-        int value = int.parse(coef);
-        distributed.add('${value * mult}x');
-      }
+      } else if (RegExp(r'^[+-]?\d*[a-zA-Z]$').hasMatch(val)) {
+  // handles a, b, c, x, 2x, -3c, etc.
+  final varChar = val.replaceAll(RegExp(r'[0-9+-]'), ''); // the letter
+  var coefStr = val.substring(0, val.length - 1);         // part before the letter
+  if (coefStr.isEmpty || coefStr == '+') coefStr = '1';
+  if (coefStr == '-') coefStr = '-1';
+  final value = int.parse(coefStr);
+  distributed.add('${value * mult}$varChar');
+}
     }
 
     for (int j = end; j >= start; j--) {
@@ -1011,17 +1013,22 @@ class PrepLCMCard extends StatefulWidget {
 
 class _PrepLCMCardState extends State<PrepLCMCard> {
   late TextEditingController _lcmCtl;
+  final _typedCtl = TextEditingController();
+
+  String? _error; // inline message for the student
 
   List<int> _scanDenoms(String s) {
     final r = RegExp(r'/\s*([0-9]+)');
-    return r.allMatches(s).map((m) => int.tryParse(m.group(1)!) ?? 1).where((x) => x > 1).toList();
+    return r
+        .allMatches(s)
+        .map((m) => int.tryParse(m.group(1)!) ?? 1)
+        .where((x) => x > 1)
+        .toList();
   }
 
   int _lcmAll(Iterable<int> xs) {
     int res = 1;
-    for (final v in xs) {
-      res = lcm(res, v);
-    }
+    for (final v in xs) res = lcm(res, v);
     return res <= 0 ? 1 : res;
   }
 
@@ -1036,88 +1043,68 @@ class _PrepLCMCardState extends State<PrepLCMCard> {
   @override
   void dispose() {
     _lcmCtl.dispose();
+    _typedCtl.dispose();
     super.dispose();
   }
 
- void _applyLCM() {
-  final k = int.tryParse(_lcmCtl.text);
-  if (k == null || k <= 0) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Enter a positive LCM.')),
-    );
-    return;
+  String _previewMultiplied() {
+    final k = int.tryParse(_lcmCtl.text) ?? 0;
+    if (k <= 0) return '';
+    try {
+      return _mulBothSides(widget.working, k); // e.g., 12(x/3)=12(5/4)
+    } catch (_) {
+      return '';
+    }
   }
 
-  try {
-    // Build the raw "k(left)=k(right)" line you expect after multiplying.
-    final multiplied = _mulBothSides(widget.working, k); // e.g., 12(x/3)=12(5/4)
+  void _check() {
+    setState(() => _error = null);
 
-    final typedCtl = TextEditingController();
-    showDialog(
-      context: context,
-      builder: (_) => AlertDialog(
-        title: const Text('Type the equation after clearing fractions'),
-        content: TextField(
-          controller: typedCtl,
-          decoration: const InputDecoration(
-            hintText: 'e.g., 3(x+3)=4(2x-1)',
-          ),
-          minLines: 1, maxLines: 3,
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
-          ),
-          ElevatedButton(
-            onPressed: () {
-              final typed = typedCtl.text.trim();
+    final k = int.tryParse(_lcmCtl.text);
+    if (k == null || k <= 0) {
+      setState(() => _error = 'Enter a positive LCM.');
+      return;
+    }
 
-              // Must be equivalent to the ×LCM line (order/spacing/parentheses can differ)
-              bool sameAsMultiplied;
-try {
-  sameAsMultiplied = canonicalizeEquation(typed) == canonicalizeEquation(multiplied);
-} catch (_) {
-  sameAsMultiplied = false;
-}
+    final preview = _previewMultiplied();
+    final typed = _typedCtl.text.trim();
 
+    if (typed.isEmpty) {
+      setState(() => _error = 'Type the equation after clearing fractions.');
+      return;
+    }
 
-              // Fractions must be gone now (no slashes anywhere)
-              final noFractions = !_hasSlash(typed);
+    bool sameAsMultiplied;
+    try {
+      sameAsMultiplied =
+          canonicalizeEquation(typed) == canonicalizeEquation(preview);
+    } catch (_) {
+      sameAsMultiplied = false;
+    }
 
-              if (sameAsMultiplied && noFractions) {
-                // Accept Step A. Keep their parentheses so Step B can ask to distribute.
-                widget.onApplied(typed);
-                Navigator.pop(context);
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Great — fractions cleared. Now distribute parentheses.')),
-                );
-              } else {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('Make sure your line matches after ×LCM and has no fractions (slashes).'),
-                  ),
-                );
-              }
-            },
-            child: const Text('Check'),
-          ),
-        ],
-      ),
-    );
-  } catch (e) {
+    final noFractions = !_hasSlash(typed);
+
+    if (!sameAsMultiplied && preview.isNotEmpty) {
+      setState(() => _error =
+          'Your line isn’t equivalent to the ×LCM preview. Check signs/parentheses.');
+      return;
+    }
+    if (!noFractions) {
+      setState(() => _error = 'Fractions must be cleared (no slashes).');
+      return;
+    }
+
+    widget.onApplied(typed); // accept!
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Couldn’t clear: $e')),
+      const SnackBar(content: Text('Great — fractions cleared. Now distribute parentheses.')),
     );
   }
-}
-
-
-
 
   @override
   Widget build(BuildContext context) {
     final denoms = _scanDenoms(widget.working);
+    final preview = _previewMultiplied();
+
     return Card(
       margin: const EdgeInsets.only(top: 16),
       child: Padding(
@@ -1125,16 +1112,22 @@ try {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('Step A — Clear Fractions', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+            const Text('Step A — Clear Fractions',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
             const SizedBox(height: 8),
-            if (denoms.isNotEmpty) Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                const Text('Denominators seen:'),
-                ...denoms.map((d) => Chip(label: Text(d.toString()))),
-              ],
-            ) else const Text('No denominators detected.'),
+
+            if (denoms.isNotEmpty)
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  const Text('Denominators seen:'),
+                  ...denoms.map((d) => Chip(label: Text(d.toString()))),
+                ],
+              )
+            else
+              const Text('No denominators detected.'),
+
             const SizedBox(height: 12),
             Row(
               children: [
@@ -1143,21 +1136,77 @@ try {
                   child: TextField(
                     controller: _lcmCtl,
                     keyboardType: TextInputType.number,
-                    decoration: const InputDecoration(labelText: 'LCM', border: OutlineInputBorder()),
+                    decoration: const InputDecoration(
+                      labelText: 'LCM',
+                      border: OutlineInputBorder(),
+                    ),
+                    onChanged: (_) => setState(() {}), // refresh preview
                   ),
                 ),
                 const SizedBox(width: 12),
-                ElevatedButton(onPressed: _applyLCM, child: const Text('Apply ×LCM')),
+                ElevatedButton(
+                  onPressed: preview.isEmpty
+                      ? null
+                      : () {
+                          // paste preview into the student input to start from
+                          _typedCtl.text = preview;
+                          setState(() {});
+                        },
+                  child: const Text('Paste preview'),
+                ),
               ],
             ),
-            const SizedBox(height: 8),
-            const Text('This will multiply both sides by LCM and simplify automatically (no need to retype k(…)=k(…)).'),
+
+            const SizedBox(height: 10),
+            if (preview.isNotEmpty)
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('Preview of ×LCM (both sides):',
+                      style:
+                          TextStyle(fontSize: 12, color: Colors.black54)),
+                  const SizedBox(height: 6),
+                  SelectableText(preview,
+                      style: const TextStyle(
+                          fontFamily: 'monospace', fontSize: 16)),
+                ],
+              ),
+
+            const SizedBox(height: 12),
+            TextField(
+              controller: _typedCtl,
+              minLines: 1,
+              maxLines: 3,
+              decoration: const InputDecoration(
+                hintText: 'Type your equation after clearing fractions (no slashes)',
+                border: OutlineInputBorder(),
+              ),
+            ),
+
+            if (_error != null) ...[
+              const SizedBox(height: 8),
+              Text(_error!,
+                  style: const TextStyle(color: Colors.red, fontSize: 13)),
+            ],
+
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                ElevatedButton(onPressed: _check, child: const Text('Check')),
+                const SizedBox(width: 8),
+                const Text('Goal: no "/" and equivalent to the ×LCM preview.',
+                    style: TextStyle(fontSize: 12, color: Colors.black54)),
+              ],
+            ),
           ],
         ),
       ),
     );
   }
 }
+
+
+
 
 // --- UI helper: Step B card (Distribute Parentheses) ---
 class DistributeCard extends StatefulWidget {
@@ -1171,6 +1220,7 @@ class DistributeCard extends StatefulWidget {
 
 class _DistributeCardState extends State<DistributeCard> {
   final _typedCtl = TextEditingController();
+  String? _error;
 
   @override
   void dispose() {
@@ -1178,27 +1228,41 @@ class _DistributeCardState extends State<DistributeCard> {
     super.dispose();
   }
 
+  int _parenCount(String s) => RegExp(r'\(').allMatches(s).length;
+
   void _check() {
+    setState(() => _error = null);
+
     final typed = _typedCtl.text.trim();
     if (typed.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Type your distributed line.')));
+      setState(() => _error = 'Type your distributed line.');
       return;
     }
-    // Must be equivalent AND reduce (or keep, not increase) parentheses count
-    final eqOK = _eqCanon(typed, widget.working);
-    final before = RegExp(r'\(').allMatches(widget.working).length;
-    final after  = RegExp(r'\(').allMatches(typed).length;
 
-    if (eqOK && after <= before) {
-      widget.onDistributed(typed);
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Good distribution step!')));
-    } else {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Not quite—distribute again or check signs.')));
+    final eqOK = _eqCanon(typed, widget.working);
+    final before = _parenCount(widget.working);
+    final after  = _parenCount(typed);
+
+    if (!eqOK) {
+      setState(() => _error = 'Not equivalent to the previous line. Check signs and distribution.');
+      return;
     }
+    if (after > before) {
+      setState(() => _error = 'You increased parentheses; distribute more or simplify.');
+      return;
+    }
+
+    widget.onDistributed(typed);
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Good distribution step!')),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
+    final before = _parenCount(widget.working);
+    final after  = _parenCount(_typedCtl.text);
+
     return Card(
       margin: const EdgeInsets.only(top: 16),
       child: Padding(
@@ -1206,9 +1270,15 @@ class _DistributeCardState extends State<DistributeCard> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('Step B — Distribute Parentheses', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+            const Text('Step B — Distribute Parentheses',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
             const SizedBox(height: 8),
-            const Text('Expand k( … ) → k·… and simplify.'),
+            const Text('Expand k( … ) → k·… and simplify. Keep it equivalent.'),
+            const SizedBox(height: 10),
+
+            Text('Start:  ${' ' + widget.working}',
+                style: const TextStyle(fontStyle: FontStyle.italic)),
+
             const SizedBox(height: 10),
             TextField(
               controller: _typedCtl,
@@ -1217,21 +1287,28 @@ class _DistributeCardState extends State<DistributeCard> {
                 hintText: 'Type your next line after distributing',
                 border: OutlineInputBorder(),
               ),
+              onChanged: (_) => setState(() {}), // live paren count
             ),
+
+            const SizedBox(height: 8),
+            Text('Parentheses: $before → $after',
+                style: const TextStyle(fontSize: 12, color: Colors.black54)),
+
+            if (_error != null) ...[
+              const SizedBox(height: 6),
+              Text(_error!, style: const TextStyle(color: Colors.red, fontSize: 13)),
+            ],
+
             const SizedBox(height: 10),
-            Row(
-              children: [
-                ElevatedButton(onPressed: _check, child: const Text('Check distribution')),
-                const SizedBox(width: 12),
-                Text('Start:  ${' ' + widget.working}', style: const TextStyle(fontStyle: FontStyle.italic)),
-              ],
-            ),
+            ElevatedButton(onPressed: _check, child: const Text('Check distribution')),
           ],
         ),
       ),
     );
   }
 }
+
+
 
 class PrepPage extends StatefulWidget {
   final String rawInput;
@@ -1956,7 +2033,7 @@ RichText(
       const TextSpan(text: ' / '),
       TextSpan(text: '$a', style: const TextStyle(color: Colors.blue)),
 
-      // Optional “= …” part to match your example behavior:
+      // Optional “= …” part to match your exgitample behavior:
       // Show only if you already computed a displayable result.
       if (frac.text.isNotEmpty) const TextSpan(text: '  =  '),
       if (frac.isInteger)
