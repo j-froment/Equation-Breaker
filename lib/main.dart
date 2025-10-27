@@ -798,6 +798,215 @@ bool _eqCanon(String a, String b) {
     return false;
   }
 }
+// --- helpers used only by the PrepLCM preview ---
+
+List<String> _splitTopLevelTerms(String side) {
+  final terms = <String>[];
+  final sb = StringBuffer();
+  int depth = 0;
+
+  for (int i = 0; i < side.length; i++) {
+    final c = side[i];
+    if (c == '(') { depth++; sb.write(c); }
+    else if (c == ')') { depth = (depth > 0) ? depth - 1 : 0; sb.write(c); }
+    else if ((c == '+' || c == '-') && depth == 0) {
+      if (sb.isNotEmpty) { terms.add(sb.toString()); sb.clear(); }
+      sb.write(c); // keep the sign with the term
+    } else {
+      sb.write(c);
+    }
+  }
+  if (sb.isNotEmpty) terms.add(sb.toString());
+  return terms;
+}
+// Multiply a whole equation-side by k and write a readable preview.
+// It distributes across top-level +/− terms and does simple numeric/coef updates.
+String _distributeSide(String side, int k) {
+  final terms = _splitTopLevelTerms(side); // keeps leading sign with each term
+  final out = <String>[];
+
+  // helpers
+  String trimSign(String s) => s.trimLeft();
+  String withSign(String sign, String body) => '$sign$body';
+
+  final reFrac   = RegExp(r'^-?\d+\s*/\s*\d+$');      // 12/5, -7/10
+  final reInt    = RegExp(r'^-?\d+$');               // 3, -4
+  final reCoefX  = RegExp(r'^(-?\d+)\s*[xX]$');      // 2x, -3x
+  final reLoneX  = RegExp(r'^[xX]$');                // x
+  bool isParen(String s) => s.startsWith('(') && s.endsWith(')');
+
+  for (var raw in terms) {
+    if (raw.isEmpty) continue;
+
+    // separate leading sign from the body
+    var sign = '';
+    var body = raw;
+    if (body.startsWith('+') || body.startsWith('-')) {
+      sign = body[0];
+      body = body.substring(1);
+    }
+    body = trimSign(body);
+
+    // cases
+    if (reInt.hasMatch(body)) {
+      // k * integer
+      final v = int.parse(body);
+      out.add(withSign(sign.isEmpty ? '+' : sign, (k * v).toString()));
+    } else if (reCoefX.hasMatch(body)) {
+      // k * (c x)  -> (k*c)x
+      final m = reCoefX.firstMatch(body)!;
+      final c = int.parse(m.group(1)!);
+      out.add(withSign(sign.isEmpty ? '+' : sign, '${k * c}x'));
+    } else if (reLoneX.hasMatch(body)) {
+      // k * x  -> kx
+      out.add(withSign(sign.isEmpty ? '+' : sign, '${k}x'));
+    } else if (reFrac.hasMatch(body)) {
+      // keep as k* (n/d) so your preview can highlight the cancelling parts
+      out.add(withSign(sign.isEmpty ? '+' : sign, '$k*${body.replaceAll(' ', '')}'));
+    } else if (isParen(body)) {
+      // don't expand nested groups here; show k* ( ... )
+      out.add(withSign(sign.isEmpty ? '+' : sign, '$k*$body'));
+    } else {
+      // fallback: write k*term
+      out.add(withSign(sign.isEmpty ? '+' : sign, '$k*$body'));
+    }
+  }
+
+  // join, dropping a leading '+'
+  if (out.isEmpty) return '';
+  var s = out.join('');
+  if (s.startsWith('+')) s = s.substring(1);
+  return s;
+}
+
+/// Build TextSpans for the distributed preview, turning numeric fractions
+/// into stacked glyphs and coloring the canceling LCM 'k' in red:
+///  - color any standalone number == k when it is directly followed by `*`
+///    and the thing after `*` is a number (NOT a letter like x).
+///  - color any denominator equal to k in a numeric fraction.
+
+  // Build TextSpans for the distributed preview, turning fractions into stacked
+// glyphs and coloring the canceling LCM k in red.
+List<InlineSpan> buildCancelPreviewSpans(String input, int k, {double fontSize = 16}) {
+  final spans = <InlineSpan>[];
+  final red = const Color(0xFFE53935);
+
+  int skipSpaces(String s, int i) {
+    while (i < s.length && s[i] == ' ') i++;
+    return i;
+  }
+
+  // Fraction patterns: allow ( ... ), x-terms, and plain integers
+  final patterns = <RegExp>[
+    // ( ... ) / ( ... )
+    RegExp(r'^(\([^()]+\))\s*/\s*(\([^()]+\))'),
+    // ( ... ) / (x-term or int)
+    RegExp(r'^(\([^()]+\))\s*/\s*(-?(?:\d+[xX]|[xX]|\d+))\b'),
+    // (x-term) / ( ... )
+    RegExp(r'^(-?(?:\d+[xX]|[xX]))\s*/\s*(\([^()]+\))'),
+    // x-term / x-term
+    RegExp(r'^(-?(?:\d+[xX]|[xX]))\s*/\s*(-?(?:\d+[xX]|[xX]))\b'),
+    // x-term / int
+    RegExp(r'^(-?(?:\d+[xX]|[xX]))\s*/\s*(-?\d+)\b'),
+    // int / x-term
+    RegExp(r'^(-?\d+)\s*/\s*(-?(?:\d+[xX]|[xX]))\b'),
+    // int / int
+    RegExp(r'^(-?\d+)\s*/\s*(-?\d+)\b'),
+  ];
+
+  int i = 0;
+  while (i < input.length) {
+    // Keep literal spaces so "=" spacing looks good
+    if (input[i] == ' ') {
+      spans.add(TextSpan(
+        text: ' ',
+        style: TextStyle(fontSize: fontSize, height: 1.3, fontFamily: 'monospace', color: Colors.black),
+      ));
+      i++;
+      continue;
+    }
+
+    final rest = input.substring(i);
+
+    // 1) Try any fraction
+    Match? m;
+    for (final p in patterns) {
+      m = p.firstMatch(rest);
+      if (m != null) break;
+    }
+    if (m != null) {
+      final numStr = m!.group(1)!.trim();
+      final denStr = m.group(2)!.trim();
+
+      // Color denominator red if it is exactly the LCM k (numeric)
+      final dVal = int.tryParse(denStr.replaceAll(RegExp(r'^\(|\)$'), ''));
+      final dIsK  = dVal != null && dVal == k;
+
+      spans.add(
+        WidgetSpan(
+          alignment: PlaceholderAlignment.middle,
+          baseline: TextBaseline.alphabetic,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 2),
+            child: FractionGlyph(
+              numerator: numStr,
+              denominator: denStr,
+              fontSize: fontSize * 0.95,
+              denominatorColor: dIsK ? red : null,
+            ),
+          ),
+        ),
+      );
+      i += m.group(0)!.length;
+      continue;
+    }
+
+    // 2) Standalone integer (possible "k * something")
+    final mNum = RegExp(r'^(-?\d+)\b').firstMatch(rest);
+    if (mNum != null) {
+      final full = mNum.group(0)!;
+      final nStr = mNum.group(1)!;
+      final nVal = int.tryParse(nStr);
+
+      bool highlight = false;
+      if (nVal != null && nVal == k) {
+        int j = i + full.length;
+        j = skipSpaces(input, j);
+        if (j < input.length && input[j] == '*') {
+          j++;
+          j = skipSpaces(input, j);
+          // highlight when the next token begins with a digit OR '('
+          if (j < input.length && (RegExp(r'\d').hasMatch(input[j]) || input[j] == '(')) {
+            highlight = true;
+          }
+        }
+      }
+
+      spans.add(TextSpan(
+        text: full,
+        style: TextStyle(
+          fontSize: fontSize,
+          height: 1.3,
+          fontFamily: 'monospace',
+          color: highlight ? red : Colors.black,
+        ),
+      ));
+      i += full.length;
+      continue;
+    }
+
+    // 3) Fallback: a single character
+    spans.add(TextSpan(
+      text: input[i],
+      style: TextStyle(fontSize: fontSize, height: 1.3, fontFamily: 'monospace', color: Colors.black),
+    ));
+    i++;
+  }
+
+  return spans;
+}
+    
+
 
 // Build the string you’d expect after “multiply both sides by k”
 String _mulBothSides(String eq, int k) {
@@ -820,10 +1029,6 @@ class TextBoxExample extends StatefulWidget {
 }
 
 class _TextBoxExampleState extends State<TextBoxExample> {
-  final TextEditingController _controller = TextEditingController();
-  final FocusNode _focusNode = FocusNode();
-  File? selectedMedia;
-  String extractedText = "";
   List<SolvedProblem> history = [];
   String? selectedEquation;
   String? selectedEquationToDelete;
@@ -841,73 +1046,37 @@ class _TextBoxExampleState extends State<TextBoxExample> {
     });
   }
 
-  Future<void> _openOCRScanner() async {
-    final result = await Navigator.push(
+  void _startNewProblem() {
+    Navigator.push(
       context,
-      MaterialPageRoute(builder: (context) => const OCRScanner()),
-    );
-    if (result is String && result.isNotEmpty) {
-      setState(() {
-        _controller.text = result;
-      });
-      FocusScope.of(context).requestFocus(_focusNode);
-    }
+      MaterialPageRoute(builder: (_) => const PrepPage(rawInput: '')),
+    ).then((_) => loadHistory());
   }
-
-  void _goToNewPage() {
-  final rawInput = _controller.text;
-  Navigator.push(
-    context,
-    MaterialPageRoute(builder: (_) => PrepPage(rawInput: rawInput)),
-  ).then((_) => loadHistory());
-}
-
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Enter a linear equation using only whole-number values'),
-        backgroundColor: Color.fromRGBO(236,229,243,1),
+        title: const Text('Prep a new equation'),
+        backgroundColor: const Color.fromRGBO(236,229,243,1),
       ),
       body: Padding(
         padding: const EdgeInsets.all(16.0),
         child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            TextField(
-              controller: _controller,
-              focusNode: _focusNode,
-              decoration: const InputDecoration(
-                border: OutlineInputBorder(),
-                labelText: 'Type equation here:',
-              ),
-            ),
-            const SizedBox(height: 10),
+            // Single entry point: users type/scan on PrepPage only
             ElevatedButton(
-              onPressed: _openOCRScanner,
-              child: const Text('Pick Image from Gallery'),
+              onPressed: _startNewProblem,
+              child: const Text('New problem'),
             ),
-            const SizedBox(height: 20),
-            ElevatedButton(
-              onPressed: _goToNewPage,
-              child: const Text('Enter'),
-            ),
-            const SizedBox(height: 20),
-            if (selectedMedia != null) ...[
-              Image.file(selectedMedia!, width: 200),
-              const SizedBox(height: 10),
-              Text(
-                extractedText.isEmpty ? "Extracting text..." : "Detected: $extractedText",
-                style: const TextStyle(fontSize: 18),
-                textAlign: TextAlign.center,
-              ),
-            ],
-            const SizedBox(height: 30),
+            const SizedBox(height: 24),
+
+            // ---- Past Problems ----
             const Text(
               "Past Problems",
               style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
             ),
-           
             DropdownButton<String>(
               isExpanded: true,
               hint: const Text("Select a past problem"),
@@ -919,15 +1088,16 @@ class _TextBoxExampleState extends State<TextBoxExample> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(problem.equation, style: const TextStyle(fontSize: 16)),
-                      Text("Answer = ${problem.finalAnswer}", style: const TextStyle(fontSize: 14, color: Color.fromARGB(255, 158, 158, 158))),
+                      Text(
+                        "Answer = ${problem.finalAnswer}",
+                        style: const TextStyle(fontSize: 14, color: Color.fromARGB(255, 158, 158, 158)),
+                      ),
                     ],
                   ),
                 );
               }).toList(),
               onChanged: (value) {
-                setState(() {
-                  selectedEquation = value;
-                });
+                setState(() => selectedEquation = value);
                 final selectedProblem = history.firstWhere((p) => p.equation == value);
                 Navigator.push(
                   context,
@@ -940,7 +1110,10 @@ class _TextBoxExampleState extends State<TextBoxExample> {
                 );
               },
             ),
-            const SizedBox(height: 20),
+
+            const SizedBox(height: 24),
+
+            // ---- Delete a Past Problem ----
             const Text(
               "Delete a Past Problem",
               style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
@@ -956,16 +1129,15 @@ class _TextBoxExampleState extends State<TextBoxExample> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(problem.equation, style: const TextStyle(fontSize: 16)),
-                      Text("Answer = ${problem.finalAnswer}", style: const TextStyle(fontSize: 14, color: Color.fromARGB(255, 230, 8, 8))),
+                      Text(
+                        "Answer = ${problem.finalAnswer}",
+                        style: const TextStyle(fontSize: 14, color: Color.fromARGB(255, 230, 8, 8)),
+                      ),
                     ],
                   ),
                 );
               }).toList(),
-              onChanged: (value) {
-                setState(() {
-                  selectedEquationToDelete = value;
-                });
-              },
+              onChanged: (value) => setState(() => selectedEquationToDelete = value),
             ),
             ElevatedButton(
               onPressed: selectedEquationToDelete == null
@@ -1001,6 +1173,7 @@ class _TextBoxExampleState extends State<TextBoxExample> {
     );
   }
 }
+
 // --- UI helper: Step A card (Clear Fractions without rewriting k(·)=k(·)) ---
 class PrepLCMCard extends StatefulWidget {
   final String working;
@@ -1047,15 +1220,20 @@ class _PrepLCMCardState extends State<PrepLCMCard> {
     super.dispose();
   }
 
-  String _previewMultiplied() {
-    final k = int.tryParse(_lcmCtl.text) ?? 0;
-    if (k <= 0) return '';
-    try {
-      return _mulBothSides(widget.working, k); // e.g., 12(x/3)=12(5/4)
-    } catch (_) {
-      return '';
-    }
+ String _previewMultiplied() {
+  final k = int.tryParse(_lcmCtl.text) ?? 0;
+  if (k <= 0) return '';
+  try {
+    final parts = widget.working.replaceAll(' ', '').split('=');
+    if (parts.length != 2) return '';
+    final left  = _distributeSide(parts[0], k);
+    final right = _distributeSide(parts[1], k);
+    return '$left  =  $right';
+  } catch (_) {
+    return '';
   }
+}
+
 
   void _check() {
     setState(() => _error = null);
@@ -1104,6 +1282,8 @@ class _PrepLCMCardState extends State<PrepLCMCard> {
   Widget build(BuildContext context) {
     final denoms = _scanDenoms(widget.working);
     final preview = _previewMultiplied();
+    final kVal = int.tryParse(_lcmCtl.text) ?? 0; // <-- ADD THIS
+
 
     return Card(
       margin: const EdgeInsets.only(top: 16),
@@ -1158,19 +1338,26 @@ class _PrepLCMCardState extends State<PrepLCMCard> {
             ),
 
             const SizedBox(height: 10),
-            if (preview.isNotEmpty)
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text('Preview of ×LCM (both sides):',
-                      style:
-                          TextStyle(fontSize: 12, color: Colors.black54)),
-                  const SizedBox(height: 6),
-                  SelectableText(preview,
-                      style: const TextStyle(
-                          fontFamily: 'monospace', fontSize: 16)),
-                ],
-              ),
+           if (preview.isNotEmpty)
+  Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      const Text('Preview of ×LCM (both sides):',
+          style: TextStyle(fontSize: 12, color: Colors.black54)),
+      const SizedBox(height: 6),
+
+      // Pretty-up only for display
+      Builder(builder: (_) {
+        final shown = addSpacesBetweenTerms(preview).replaceAll('*', ' × ');
+        return RichText(
+          text: TextSpan(
+            children: buildCancelPreviewSpans(shown, kVal, fontSize: 16),
+          ),
+        );
+      }),
+    ],
+  ),
+
 
             const SizedBox(height: 12),
             TextField(
@@ -1276,8 +1463,8 @@ class _DistributeCardState extends State<DistributeCard> {
             const Text('Expand k( … ) → k·… and simplify. Keep it equivalent.'),
             const SizedBox(height: 10),
 
-            Text('Start:  ${' ' + widget.working}',
-                style: const TextStyle(fontStyle: FontStyle.italic)),
+            const Text('Start:', style: TextStyle(fontSize: 14, color: Colors.black54)),
+            PrettyEq(widget.working, fontSize: 24),
 
             const SizedBox(height: 10),
             TextField(
@@ -1307,6 +1494,178 @@ class _DistributeCardState extends State<DistributeCard> {
     );
   }
 }
+/// Draws a stacked fraction like
+///    num
+///   ─────
+///    den
+class Fraction extends StatelessWidget {
+  final String numerator;
+  final String denominator;
+  final double fontSize;
+  final double barThickness;
+  final EdgeInsets padding;
+
+  const Fraction({
+    super.key,
+    required this.numerator,
+    required this.denominator,
+    this.fontSize = 22,
+    this.barThickness = 1.2,
+    this.padding = const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final numStyle = TextStyle(fontSize: fontSize * 0.95, height: 1.0);
+    final denStyle = TextStyle(fontSize: fontSize * 0.95, height: 1.0);
+
+    return Padding(
+      padding: padding,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(numerator, style: numStyle),
+          Container(
+            height: barThickness,
+            width: (numerator.length > denominator.length
+                    ? numerator.length : denominator.length) * (fontSize * 0.55),
+            margin: const EdgeInsets.symmetric(vertical: 2),
+            color: Colors.black,
+          ),
+          Text(denominator, style: denStyle),
+        ],
+      ),
+    );
+  }
+}
+
+/// Converts plain numeric fractions like "12/5" or "-7 / 10"
+/// (not adjacent to letters) into stacked Fraction widgets.
+/// Everything else becomes TextSpans.
+///
+/// NOTE: it will NOT convert "x/3" or "2x/5" (these are not pure numeric).
+  // New: pretty-print fractions where numerator/denominator can be
+//  - parenthesized expression: (3x+4)
+//  - a single x-term: x, -x, 3x, -12x
+//  - a plain integer: 7, -5
+List<InlineSpan> buildPrettyMathSpans(String input, {double fontSize = 22}) {
+  final spans = <InlineSpan>[];
+
+  // Try more specific patterns first, then fall back to numeric-only
+ final patterns = <RegExp>[
+  RegExp(r'^(\([^()]+\))\s*/\s*(\([^()]+\))'),
+  RegExp(r'^(\([^()]+\))\s*/\s*(-?(?:\d+[xX]|[xX]|\d+))\b'),
+  RegExp(r'^(-?(?:\d+[xX]|[xX]))\s*/\s*(\([^()]+\))'),
+  RegExp(r'^(-?(?:\d+[xX]|[xX]))\s*/\s*(-?(?:\d+[xX]|[xX]))\b'),
+  RegExp(r'^(-?(?:\d+[xX]|[xX]))\s*/\s*(-?\d+)\b'),
+  RegExp(r'^(-?\d+)\s*/\s*(-?(?:\d+[xX]|[xX]))\b'),
+  RegExp(r'^(-?\d+)\s*/\s*(-?\d+)\b'),
+];
+
+
+  int i = 0;
+  while (i < input.length) {
+    final rest = input.substring(i);
+
+    Match? m;
+    for (final p in patterns) {
+      m = p.firstMatch(rest);
+      if (m != null) break;
+    }
+
+    if (m != null) {
+      final numStr = m!.group(1)!.trim();
+      final denStr = m.group(2)!.trim();
+
+      spans.add(
+        WidgetSpan(
+          alignment: PlaceholderAlignment.middle,
+          baseline: TextBaseline.alphabetic,
+          child: Padding(
+  padding: const EdgeInsets.symmetric(horizontal: 2),
+  child: FractionGlyph(
+    numerator: numStr,
+    denominator: denStr,
+    fontSize: fontSize,
+  ),
+),
+
+        ),
+      );
+
+      i += m.group(0)!.length; // advance past the whole match
+      continue;
+    }
+
+    // No fraction at this point—emit one character (preserve spacing)
+    spans.add(TextSpan(
+      text: input[i],
+      style: TextStyle(
+        fontSize: fontSize,
+        fontFamily: 'monospace',
+        height: 1.3,
+        color: Colors.black,
+      ),
+    ));
+    i++;
+  }
+
+  return spans;
+}
+
+
+
+class PrettyEq extends StatelessWidget {
+  final String eq;
+  final double fontSize;
+  const PrettyEq(this.eq, {super.key, this.fontSize = 22});
+
+  @override
+  Widget build(BuildContext context) {
+    // Keep your spacing helper so “(3x+4)/4 = x/3” becomes more legible first
+    final spaced = addSpacesBetweenTerms(eq);
+    final spans  = buildPrettyMathSpans(spaced, fontSize: fontSize);
+    return SelectableText.rich(TextSpan(children: spans));
+  }
+}
+
+
+/// Renders a stacked (numeric) fraction that lines up inside text.
+class FractionGlyph extends StatelessWidget {
+  final String numerator;
+  final String denominator;
+  final double fontSize;
+  final Color? numeratorColor;
+  final Color? denominatorColor;
+
+  const FractionGlyph({
+    super.key,
+    required this.numerator,
+    required this.denominator,
+    required this.fontSize,
+    this.numeratorColor,
+    this.denominatorColor,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final base = DefaultTextStyle.of(context)
+        .style
+        .copyWith(fontSize: fontSize, fontFamily: 'monospace', height: 1.1);
+
+    return IntrinsicWidth(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(numerator, style: base.copyWith(color: numeratorColor)),
+          Container(height: 1, color: Colors.black),
+          Text(denominator, style: base.copyWith(color: denominatorColor)),
+        ],
+      ),
+    );
+  }
+}
+
 
 
 
@@ -1319,93 +1678,282 @@ class PrepPage extends StatefulWidget {
 }
 
 class _PrepPageState extends State<PrepPage> {
-  late String working; // student’s current equation string
+  // ---- Step 0: entry + validation ----
+  final _eqCtl = TextEditingController();
+  final _eqFocus = FocusNode();
+  String? _entryError;            // plain-language parse error
+  bool _canStart = false;         // enables "Start Prep"
+  bool _highContrast = false;     // accessibility toggle
+  double _fontScale = 1.0;        // text size in this screen
 
-
+  // ---- Stage control ----
+  int _stage = 0;                 // 0 = entry/validate, 1 = your existing prep flow
+  late String working;            // the frozen equation after we start prep
   bool needFractions = false;
   bool needParens = false;
 
   @override
   void initState() {
     super.initState();
-    working = widget.rawInput.trim();
-    needFractions = _hasSlash(working);
-    needParens = _hasParens(working);
-  }
-
-  void _gotoStep1() {
-    Navigator.push(
-      context,
-      MaterialPageRoute(builder: (_) => EquationPage(equation: working)),
-    );
+    _eqCtl.text = widget.rawInput.trim();
+    _validateEntry(_eqCtl.text);
   }
 
   @override
+  void dispose() {
+    _eqCtl.dispose();
+    _eqFocus.dispose();
+    super.dispose();
+  }
+
+  // ===== helpers =====
+  void _insert(String s) {
+    final sel = _eqCtl.selection;
+    final text = _eqCtl.text;
+    final start = sel.start >= 0 ? sel.start : text.length;
+    final end = sel.end >= 0 ? sel.end : text.length;
+    final next = text.replaceRange(start, end, s);
+    _eqCtl.text = next;
+    final caret = start + s.length;
+    _eqCtl.selection = TextSelection.collapsed(offset: caret);
+    _validateEntry(next);
+  }
+
+  Future<void> _openOCR() async {
+    final result = await Navigator.push(context, MaterialPageRoute(builder: (_) => const OCRScanner()));
+    if (result is String && result.isNotEmpty) {
+      _eqCtl.text = result.trim();
+      _eqCtl.selection = TextSelection.collapsed(offset: _eqCtl.text.length);
+      _validateEntry(_eqCtl.text);
+      FocusScope.of(context).requestFocus(_eqFocus);
+    }
+  }
+
+  void _validateEntry(String input) {
+    setState(() {
+      _entryError = null;
+      _canStart = false;
+
+      final s = input.trim();
+      if (s.isEmpty) {
+        _entryError = 'Type an equation like 2x + 3 = 11';
+        return;
+      }
+      if (!s.contains('=')) {
+        _entryError = 'Add one "=" so it looks like left = right';
+        return;
+      }
+      // Try your parser + canonicalizer to ensure it’s linear
+      try {
+        canonicalizeEquation(s); // will throw on non-linear/invalid
+      } catch (e) {
+        _entryError = 'I can’t read that as a linear equation. Check signs/parentheses.';
+        return;
+      }
+      _canStart = true;
+    });
+  }
+
+  void _startPrep() {
+    if (!_canStart) return;
+    setState(() {
+      _stage = 1;
+      working = _eqCtl.text.trim();
+      needFractions = _hasSlash(working);
+      needParens = _hasParens(working);
+    });
+  }
+
+  TextStyle _scalable(TextStyle base) =>
+      base.copyWith(fontSize: (base.fontSize ?? 16) * _fontScale);
+
+  // ====== UI ======
+  @override
   Widget build(BuildContext context) {
+    final hcBg = _highContrast ? const Color(0xFF0D0D0D) : Colors.white;
+    final hcFg = _highContrast ? Colors.white : Colors.black;
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('Prep: you do the setup'),
-        backgroundColor: Color.fromRGBO(236,229,243,1),
-      ),
-      body: ListView(
-        padding: const EdgeInsets.all(16),
-        children: [
-          const Text('Start from your equation. Do each move yourself; I’ll just check it.'),
-          const SizedBox(height: 8),
-          Text('Current:  $working', style: const TextStyle(fontSize: 18)),
-
-          // ---- Step A: Clear Fractions ----
-          if (needFractions) ...[
-  PrepLCMCard(
-    working: working,
-    onApplied: (newWorking) {
-      setState(() {
-        working = newWorking;
-        // keep your existing flags in sync with the step’s result
-        needFractions = _hasSlash(working); // may still be true if user kept fractions
-        needParens   = _hasParens(working);
-      });
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Nice! Fractions step accepted.')),
-      );
-    },
-  ),
-],
-
-
-          // ---- Step B: Distribute Parentheses ----
-          if (!needFractions && needParens)
-  DistributeCard(
-    working: working,
-    onDistributed: (newWorking) {
-      setState(() {
-        working = newWorking;
-        needParens = _hasParens(working);
-      });
-    },
-  ),
-
-
-          const SizedBox(height: 24),
-          ElevatedButton(
-            onPressed: () {
-              if (_hasSlash(working)) {
-                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Clear fractions first.')));
-                return;
-              }
-              if (_hasParens(working)) {
-                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Distribute parentheses first.')));
-                return;
-              }
-              _gotoStep1();
-            },
-            child: const Text('I’m ready for Step 1'),
+        backgroundColor: const Color.fromRGBO(236,229,243,1),
+        actions: [
+          // text size
+          Row(children: [
+            const SizedBox(width: 8),
+            const Icon(Icons.text_increase, size: 18),
+            Slider(
+              value: _fontScale,
+              min: 0.9,
+              max: 1.4,
+              divisions: 5,
+              onChanged: (v) => setState(() => _fontScale = v),
+            ),
+          ]),
+          // high contrast
+          IconButton(
+            tooltip: 'High contrast',
+            icon: Icon(_highContrast ? Icons.visibility : Icons.visibility_outlined),
+            onPressed: () => setState(() => _highContrast = !_highContrast),
           ),
         ],
+      ),
+      body: Container(
+        color: hcBg,
+        child: ListView(
+          padding: const EdgeInsets.all(16),
+          children: [
+            // ===== Step 0: Enter & validate =====
+            if (_stage == 0) ...[
+              Text('Step 0 — Enter your equation', style: _scalable(const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.black))),
+              const SizedBox(height: 8),
+              TextField(
+                controller: _eqCtl,
+                focusNode: _eqFocus,
+                style: _scalable(TextStyle(color: hcFg)),
+                decoration: InputDecoration(
+                  hintText: 'e.g., (x/3) + 2 = 11',
+                  border: const OutlineInputBorder(),
+                  suffixIcon: IconButton(
+                    tooltip: 'Scan from image',
+                    icon: const Icon(Icons.document_scanner_outlined),
+                    onPressed: _openOCR,
+                  ),
+                ),
+                onChanged: _validateEntry,
+              ),
+              const SizedBox(height: 10),
+
+              // Large math keypad
+              Wrap(
+                spacing: 8, runSpacing: 8,
+                children: [
+                  for (final key in ['x','+','-','*','/','(',')','=','  '])
+                    _KeyBtn(label: key.trim().isEmpty ? 'space' : key, onTap: () => _insert(key == '  ' ? ' ' : key), highContrast: _highContrast),
+                  _KeyBtn(label: 'DEL', onTap: () {
+                    final t = _eqCtl.text;
+                    final sel = _eqCtl.selection;
+                    if (sel.isValid && !sel.isCollapsed) {
+                      _insert('');
+                    } else if (t.isNotEmpty) {
+                      final caret = sel.baseOffset >= 0 ? sel.baseOffset : t.length;
+                      final cut = caret > 0 ? caret - 1 : 0;
+                      _eqCtl.text = t.replaceRange(cut, caret, '');
+                      _eqCtl.selection = TextSelection.collapsed(offset: cut);
+                      _validateEntry(_eqCtl.text);
+                    }
+                  }, highContrast: _highContrast),
+                ],
+              ),
+
+              const SizedBox(height: 12),
+              Text('Preview', style: _scalable(const TextStyle(fontSize: 14, color: Colors.black54))),
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: _highContrast ? const Color(0xFF1A1A1A) : const Color(0xFFF7F5FB),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: const Color(0xFFE3DAF3)),
+                ),
+                child: PrettyEq(_eqCtl.text, fontSize: 22 * _fontScale),
+              ),
+
+              const SizedBox(height: 8),
+              if (_entryError != null)
+                Text(_entryError!, style: _scalable(const TextStyle(color: Colors.red, fontSize: 13))),
+              if (_entryError == null)
+                Text('Looks good — linear and readable.', style: _scalable(const TextStyle(color: Colors.green, fontSize: 13))),
+
+              const SizedBox(height: 12),
+              ElevatedButton(
+                onPressed: _canStart ? _startPrep : null,
+                child: const Text('Start Prep'),
+              ),
+            ],
+
+            // ===== Stage 1: your existing flow (unchanged logic) =====
+            if (_stage == 1) ...[
+              Text('Current', style: _scalable(const TextStyle(fontSize: 14, color: Colors.black54))),
+              PrettyEq(working, fontSize: 22 * _fontScale),
+              const SizedBox(height: 8),
+
+              if (needFractions)
+                PrepLCMCard(
+                  working: working,
+                  onApplied: (newWorking) {
+                    setState(() {
+                      working = newWorking;
+                      needFractions = _hasSlash(working);
+                      needParens   = _hasParens(working);
+                    });
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Nice! Fractions step accepted.')),
+                    );
+                  },
+                ),
+
+              if (!needFractions && needParens)
+                DistributeCard(
+                  working: working,
+                  onDistributed: (newWorking) {
+                    setState(() {
+                      working = newWorking;
+                      needParens = _hasParens(working);
+                    });
+                  },
+                ),
+
+              const SizedBox(height: 24),
+              ElevatedButton(
+                onPressed: () {
+                  if (_hasSlash(working)) {
+                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Clear fractions first.')));
+                    return;
+                  }
+                  if (_hasParens(working)) {
+                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Distribute parentheses first.')));
+                    return;
+                  }
+                  Navigator.push(context, MaterialPageRoute(builder: (_) => EquationPage(equation: working)));
+                },
+                child: const Text('I’m ready for Step 1'),
+              ),
+            ],
+          ],
+        ),
       ),
     );
   }
 }
+
+// Big friendly keypad button
+class _KeyBtn extends StatelessWidget {
+  final String label;
+  final VoidCallback onTap;
+  final bool highContrast;
+  const _KeyBtn({required this.label, required this.onTap, required this.highContrast});
+
+  @override
+  Widget build(BuildContext context) {
+    final bg = highContrast ? const Color(0xFF262626) : const Color(0xFFF1ECFA);
+    final fg = highContrast ? Colors.white : Colors.black87;
+    return SizedBox(
+      height: 44,
+      child: ElevatedButton(
+        style: ElevatedButton.styleFrom(
+          backgroundColor: bg,
+          foregroundColor: fg,
+          padding: const EdgeInsets.symmetric(horizontal: 14),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          elevation: 0,
+        ),
+        onPressed: onTap,
+        child: Text(label),
+      ),
+    );
+  }
+}
+
 // ---------- Reusable UI helpers for clear instructions & visuals ----------
 
 class LegendBar extends StatelessWidget {
@@ -1415,7 +1963,7 @@ class LegendBar extends StatelessWidget {
     return Wrap(
       spacing: 10,
       crossAxisAlignment: WrapCrossAlignment.center,
-      children: const [
+      children:  [
         _LegendDot(color: Color.fromARGB(255, 255, 149, 0), label: 'orange = constants'),
         _LegendDot(color: Colors.blue, label: 'blue = x-coefficients'),
       ],
