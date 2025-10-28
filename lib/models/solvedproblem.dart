@@ -13,18 +13,24 @@ class SolvedProblem extends HiveObject {
   @HiveField(2)
   int step2Answer;
 
+  // was: int finalAnswer;
+  // make it nullable so non-integer results are allowed.
   @HiveField(3)
-  int finalAnswer;
+  int? finalAnswer;
 
   @HiveField(4)
   DateTime solvedAt;
 
+  // NEW: pretty string like "3/5 (= 0.600)". Leave old fields alone.
+  @HiveField(5)
+  String? finalAnswerText;
 
   SolvedProblem({
     required this.equation,
     required this.step1Answer,
     required this.step2Answer,
-    required this.finalAnswer,
+    this.finalAnswer,
     required this.solvedAt,
+    this.finalAnswerText,
   });
 }

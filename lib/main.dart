@@ -9,6 +9,29 @@ import 'package:image_picker/image_picker.dart';
 import 'package:google_mlkit_text_recognition/google_mlkit_text_recognition.dart';
 
 const kOrange = Color.fromARGB(255, 255, 149, 0);
+// Themed color helpers (respect light/dark + HC)
+Color onSurface(BuildContext c, [double opacity = 1]) =>
+    Theme.of(c).colorScheme.onSurface.withOpacity(opacity);
+Color surface(BuildContext c) => Theme.of(c).colorScheme.surface;
+Color surfaceVariant(BuildContext c) => Theme.of(c).colorScheme.surfaceVariant;
+Color outline(BuildContext c) => Theme.of(c).colorScheme.outline;
+// ==== Contrast-aware math colors ====
+Color baseText(BuildContext c) => Theme.of(c).colorScheme.onSurface;
+
+// Bright but AA+ on dark backgrounds, still readable on light.
+// (Amber 300-ish & Light Blue 300-ish — tuned for >= 7:1 on #0D0D0D)
+Color kConstColor(BuildContext c) {
+  final hc = FontScope.of(c).highContrast;
+  return hc ? const Color(0xFFFFD54F) : const Color.fromARGB(255, 255, 149, 0);
+}
+
+Color kXColor(BuildContext c) {
+  final hc = FontScope.of(c).highContrast;
+  return hc ? const Color(0xFF4FC3F7) : Colors.blue;
+}
+
+// Thin rule/outline color that tracks text
+Color ruleColor(BuildContext c) => Theme.of(c).colorScheme.onSurface.withOpacity(0.9);
 
 List<int> xvalleft = [];
 List<int> constantsleft = [];
@@ -34,6 +57,20 @@ class OCRScanner extends StatefulWidget {
 
   @override
   State<OCRScanner> createState() => _OCRScannerState();
+}
+class AB {
+  final int a; // coefficient of x (blue)
+  final int b; // constant total (orange)
+  AB(this.a, this.b);
+}
+
+AB computeAB(String eq) {
+  final canon = canonicalizeEquation(eq); // e.g., "16x=3"
+  final m = RegExp(r'^\s*(-?\d+)\s*x\s*=\s*(-?\d+)\s*$').firstMatch(canon);
+  if (m == null) throw FormatException('Unexpected canonical form: $canon');
+  final a = int.parse(m.group(1)!);
+  final b = int.parse(m.group(2)!);
+  return AB(a, b);
 }
 
 class _OCRScannerState extends State<OCRScanner> {
@@ -122,19 +159,42 @@ class _OCRScannerState extends State<OCRScanner> {
 
 class MyApp extends StatelessWidget {
   const MyApp({super.key});
+
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      theme: ThemeData(
-        scaffoldBackgroundColor: const Color.fromARGB(255, 255, 255, 255),
+    final prefs = FontPrefs(); // one shared instance for the app
+
+    return FontScope(
+      notifier: prefs,
+      child: AnimatedBuilder(
+        animation: prefs,
+        builder: (context, _) {
+          final theme = ThemeData(
+            brightness: prefs.highContrast ? Brightness.dark : Brightness.light,
+            colorScheme: ColorScheme.fromSeed(
+              seedColor: const Color(0xFF6B46C1),
+              brightness: prefs.highContrast ? Brightness.dark : Brightness.light,
+            ),
+            scaffoldBackgroundColor:
+                prefs.highContrast ? const Color(0xFF0D0D0D) : Colors.white,
+          );
+
+          // Apply text scaling globally
+          return MediaQuery(
+            data: MediaQuery.of(context).copyWith(textScaleFactor: prefs.scale),
+            child: MaterialApp(
+              theme: theme,
+              title: 'Dycalculating equations',
+              home: const TextBoxExample(),
+              debugShowCheckedModeBanner: false,
+            ),
+          );
+        },
       ),
-      title: 'Dycalculating equations',
-      home: 
-      //Scaffold(body: Center(child: Text('Hello World')))
-       const TextBoxExample(),
     );
   }
 }
+
 String solutionStatus(int b, int a) {
   if (a == 0 && b == 0) return 'Infinitely many solutions';
   if (a == 0 && b != 0) return 'No solution';
@@ -144,6 +204,37 @@ String solutionStatus(int b, int a) {
 int gcd(int a, int b) => b == 0 ? a.abs() : gcd(b, a % b);
 // ---------- FRACTIONS & LCM ----------
 int lcm(int a, int b) => (a == 0 || b == 0) ? 0 : (a ~/ gcd(a, b)) * b;
+// ==== Global font + contrast prefs ====
+class FontPrefs extends ChangeNotifier {
+  double scale = 1.0;          // 0.9 .. 1.4
+  bool highContrast = false;
+
+  void setScale(double v) {
+    if (v == scale) return;
+    scale = v;
+    notifyListeners();
+  }
+
+  void toggleHC() {
+    highContrast = !highContrast;
+    notifyListeners();
+  }
+}
+
+// Inherited bridge so any widget can read/update prefs without packages
+class FontScope extends InheritedNotifier<FontPrefs> {
+  const FontScope({super.key, required FontPrefs notifier, required Widget child})
+      : super(notifier: notifier, child: child);
+
+  static FontPrefs of(BuildContext context) {
+    final scope = context.dependOnInheritedWidgetOfExactType<FontScope>();
+    assert(scope != null, 'FontScope not found in widget tree.');
+    return scope!.notifier!;
+  }
+
+  @override
+  bool updateShouldNotify(covariant InheritedNotifier<FontPrefs> oldWidget) => true;
+}
 
 class Frac {
   int n; // numerator
@@ -409,10 +500,18 @@ bool _decimalMatchesFraction(String decStr, int n, int d, {double tol = 1e-3}) {
   return (x - (n / d)).abs() <= tol;
 }
 
-/// Parses an algebraic equation to identify x terms and constants on both sides.
-/// It also colors x terms as blue and constants as orange.
-/// @param equation The input algebraic equation as a string.
-Widget findComponents(String equation) {
+/// Parses an algebraic equation to identify x terms and constants on both sides,
+/// and renders them with contrast-aware colors (HC friendly).
+/// NOTE: signature now takes BuildContext so we can read theme + HC.
+Widget findComponents(BuildContext context, String equation) {
+  // ---- contrast-aware colors ----
+  final on = Theme.of(context).colorScheme.onSurface;     // base text
+  final hc = FontScope.of(context).highContrast;
+  // accessible accents for HC; keep your original hues for normal mode
+  final xCol = hc ? const Color(0xFF4FC3F7) : Colors.blue;                         // blue-ish
+  final kCol = hc ? const Color(0xFFFFD54F) : const Color.fromARGB(255, 255, 149, 0); // orange-ish
+
+  // ---- original state resets ----
   xvalleft.clear();
   constantsleft.clear();
   xvalright.clear();
@@ -434,6 +533,7 @@ Widget findComponents(String equation) {
     }
   }
 
+  // ---- scan LEFT ----
   int j = 0;
   while (j < left.length) {
     if (isNumeric(left[j]) || (left[j] == '-' && j + 1 < left.length && isNumeric(left[j + 1]))) {
@@ -468,6 +568,7 @@ Widget findComponents(String equation) {
     }
   }
 
+  // ---- scan RIGHT ----
   int i = 0;
   while (i < right.length) {
     if (isNumeric(right[i]) || (right[i] == '-' && i + 1 < right.length && isNumeric(right[i + 1]))) {
@@ -502,6 +603,7 @@ Widget findComponents(String equation) {
     }
   }
 
+  // ---- pretty spaced equation (keeps indices mapping via rawIndex) ----
   String formattedEquation = '';
   final buffer = StringBuffer();
   int k = 0;
@@ -521,38 +623,47 @@ Widget findComponents(String equation) {
   }
   formattedEquation = buffer.toString();
 
+  // ---- build colored spans with theme-aware colors ----
   List<InlineSpan> spans = [];
   int rawIndex = 0;
   for (int idx = 0; idx < formattedEquation.length; idx++) {
     String char = formattedEquation[idx];
     if (char == ' ') {
-      spans.add(const TextSpan(text: ' '));
+      spans.add(TextSpan(text: ' ', style: TextStyle(color: on)));
       continue;
     }
-    TextStyle style = const TextStyle(color: Colors.black);
+
+    TextStyle style = TextStyle(color: on);
+
     if (rawIndex < left.length) {
       if (xvalleft.contains(rawIndex)) {
-        style = const TextStyle(color: Colors.blue);
+        style = TextStyle(color: xCol);
       } else if (constantsleft.contains(rawIndex)) {
-        style = const TextStyle(color: Color.fromARGB(255, 255, 149, 0));
+        style = TextStyle(color: kCol);
       }
     } else if (rawIndex == left.length) {
-      style = const TextStyle(color: Colors.black);
+      style = TextStyle(color: on); // the '=' slot
     } else {
       int rightIndex = rawIndex - (left.length + 1);
       if (xvalright.contains(rightIndex)) {
-        style = const TextStyle(color: Colors.blue);
+        style = TextStyle(color: xCol);
       } else if (constantsright.contains(rightIndex)) {
-        style = const TextStyle(color: Color.fromARGB(255, 255, 149, 0));
+        style = TextStyle(color: kCol);
       }
     }
+
     spans.add(TextSpan(text: char, style: style));
     rawIndex++;
   }
+
   return RichText(
-    text: TextSpan(children: spans, style: const TextStyle(fontSize: 24)),
+    text: TextSpan(
+      children: spans,
+      style: TextStyle(fontSize: 24, color: on),
+    ),
   );
 }
+
 
 String addSpacesBetweenTerms(String eq) {
   String result = '';
@@ -946,15 +1057,20 @@ List<InlineSpan> buildCancelPreviewSpans(String input, int k, {double fontSize =
         WidgetSpan(
           alignment: PlaceholderAlignment.middle,
           baseline: TextBaseline.alphabetic,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 2),
-            child: FractionGlyph(
-              numerator: numStr,
-              denominator: denStr,
-              fontSize: fontSize * 0.95,
-              denominatorColor: dIsK ? red : null,
-            ),
-          ),
+          child: Container(
+  decoration: BoxDecoration(
+    color: dIsK ? const Color(0xFFE53935).withOpacity(0.12) : null,
+    borderRadius: BorderRadius.circular(4),
+  ),
+  padding: const EdgeInsets.symmetric(horizontal: 2),
+  child: FractionGlyph(
+    numerator: numStr,
+    denominator: denStr,
+    fontSize: fontSize * 0.95,
+    denominatorColor: dIsK ? red : null,
+  ),
+),
+
         ),
       );
       i += m.group(0)!.length;
@@ -1088,10 +1204,11 @@ class _TextBoxExampleState extends State<TextBoxExample> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(problem.equation, style: const TextStyle(fontSize: 16)),
-                      Text(
-                        "Answer = ${problem.finalAnswer}",
-                        style: const TextStyle(fontSize: 14, color: Color.fromARGB(255, 158, 158, 158)),
-                      ),
+                     Text(
+  "Answer = ${problem.finalAnswerText ?? problem.finalAnswer?.toString() ?? '?'}",
+  style: const TextStyle(fontSize: 14, color: Color.fromARGB(255, 158, 158, 158)),
+),
+
                     ],
                   ),
                 );
@@ -1100,14 +1217,12 @@ class _TextBoxExampleState extends State<TextBoxExample> {
                 setState(() => selectedEquation = value);
                 final selectedProblem = history.firstWhere((p) => p.equation == value);
                 Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) => EquationPage(
-                      equation: selectedProblem.equation,
-                      correctAnswerOverride: selectedProblem.step1Answer,
-                    ),
-                  ),
-                );
+  context,
+  MaterialPageRoute(
+    builder: (_) => PrepPage(rawInput: selectedProblem.equation),
+  ),
+);
+
               },
             ),
 
@@ -1130,9 +1245,10 @@ class _TextBoxExampleState extends State<TextBoxExample> {
                     children: [
                       Text(problem.equation, style: const TextStyle(fontSize: 16)),
                       Text(
-                        "Answer = ${problem.finalAnswer}",
-                        style: const TextStyle(fontSize: 14, color: Color.fromARGB(255, 230, 8, 8)),
-                      ),
+  "Answer = ${problem.finalAnswerText ?? problem.finalAnswer?.toString() ?? '?'}",
+  style: const TextStyle(fontSize: 14, color: Color.fromARGB(255, 230, 8, 8)),
+),
+
                     ],
                   ),
                 );
@@ -1189,6 +1305,8 @@ class _PrepLCMCardState extends State<PrepLCMCard> {
   final _typedCtl = TextEditingController();
 
   String? _error; // inline message for the student
+  String? _feedback;   // ✅ success message
+  bool _ok = false;    // used to show green state
 
   List<int> _scanDenoms(String s) {
     final r = RegExp(r'/\s*([0-9]+)');
@@ -1236,47 +1354,49 @@ class _PrepLCMCardState extends State<PrepLCMCard> {
 
 
   void _check() {
-    setState(() => _error = null);
+  setState(() { _error = null; _feedback = null; _ok = false; });
 
-    final k = int.tryParse(_lcmCtl.text);
-    if (k == null || k <= 0) {
-      setState(() => _error = 'Enter a positive LCM.');
-      return;
-    }
-
-    final preview = _previewMultiplied();
-    final typed = _typedCtl.text.trim();
-
-    if (typed.isEmpty) {
-      setState(() => _error = 'Type the equation after clearing fractions.');
-      return;
-    }
-
-    bool sameAsMultiplied;
-    try {
-      sameAsMultiplied =
-          canonicalizeEquation(typed) == canonicalizeEquation(preview);
-    } catch (_) {
-      sameAsMultiplied = false;
-    }
-
-    final noFractions = !_hasSlash(typed);
-
-    if (!sameAsMultiplied && preview.isNotEmpty) {
-      setState(() => _error =
-          'Your line isn’t equivalent to the ×LCM preview. Check signs/parentheses.');
-      return;
-    }
-    if (!noFractions) {
-      setState(() => _error = 'Fractions must be cleared (no slashes).');
-      return;
-    }
-
-    widget.onApplied(typed); // accept!
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Great — fractions cleared. Now distribute parentheses.')),
-    );
+  final k = int.tryParse(_lcmCtl.text);
+  if (k == null || k <= 0) {
+    setState(() => _error = 'Enter a positive LCM.');
+    return;
   }
+
+  final preview = _previewMultiplied();
+  final typed   = _typedCtl.text.trim();
+
+  if (typed.isEmpty) {
+    setState(() => _error = 'Type the equation after clearing fractions.');
+    return;
+  }
+
+  bool sameAsMultiplied;
+  try {
+    sameAsMultiplied =
+        canonicalizeEquation(typed) == canonicalizeEquation(preview);
+  } catch (_) {
+    sameAsMultiplied = false;
+  }
+  final noFractions = !_hasSlash(typed);
+
+  if (!sameAsMultiplied && preview.isNotEmpty) {
+    setState(() => _error =
+        'Your line isn’t equivalent to the ×LCM preview. Check signs/parentheses.');
+    return;
+  }
+  if (!noFractions) {
+    setState(() => _error = 'Fractions must be cleared (no slashes).');
+    return;
+  }
+
+  setState(() { _ok = true; _feedback = '✅ Great — you cleared all fractions correctly!'; });
+
+  widget.onApplied(typed);
+  ScaffoldMessenger.of(context).showSnackBar(
+    const SnackBar(content: Text('Great — fractions cleared. Now distribute parentheses.')),
+  );
+}
+
 
   @override
   Widget build(BuildContext context) {
@@ -1307,6 +1427,19 @@ class _PrepLCMCardState extends State<PrepLCMCard> {
               )
             else
               const Text('No denominators detected.'),
+  const SizedBox(height: 8),
+
+  _ExplainBox(
+    text: 'To remove fractions, multiply both sides by the Least Common Multiple (LCM) of all denominators.',
+    examples: const [
+      'Find denominators on both sides (e.g., 3 and 4).',
+      'LCM(3, 4) = 12 → multiply every top-level term by 12.',
+      'This cancels the ÷3 and ÷4 so there are no slashes left.',
+    ],
+  ),
+  const SizedBox(height: 8),
+
+  if (denoms.isNotEmpty)
 
             const SizedBox(height: 12),
             Row(
@@ -1351,24 +1484,64 @@ class _PrepLCMCardState extends State<PrepLCMCard> {
         final shown = addSpacesBetweenTerms(preview).replaceAll('*', ' × ');
         return RichText(
           text: TextSpan(
-            children: buildCancelPreviewSpans(shown, kVal, fontSize: 16),
+            children: buildCancelPreviewSpans(shown, kVal, fontSize: 28),
           ),
         );
       }),
     ],
   ),
+  const SizedBox(height: 6),
+AnimatedSwitcher(
+  duration: const Duration(milliseconds: 300),
+  child: preview.isEmpty
+      ? const SizedBox.shrink()
+      : Text(
+          'Multiply both sides by $kVal',
+          key: ValueKey(kVal),
+          style: const TextStyle(fontSize: 14, color: Colors.black54),
+        ),
+),
+
 
 
             const SizedBox(height: 12),
             TextField(
-              controller: _typedCtl,
-              minLines: 1,
-              maxLines: 3,
-              decoration: const InputDecoration(
-                hintText: 'Type your equation after clearing fractions (no slashes)',
-                border: OutlineInputBorder(),
-              ),
-            ),
+  controller: _typedCtl,
+  minLines: 1,
+  maxLines: 3,
+  style: const TextStyle(
+    fontSize: 22,
+    fontFamily: 'monospace'
+  ),
+  decoration: const InputDecoration(
+    hintText: 'Type your equation after clearing fractions (no slashes)',
+    hintStyle: TextStyle(fontSize: 20),
+    border: OutlineInputBorder(),
+    isDense: false,
+    contentPadding: EdgeInsets.symmetric(
+      vertical: 16,
+      horizontal: 12,
+    ),
+  ),
+  onChanged: (_) => setState(() {}),   // <— add this
+),
+const SizedBox(height: 8),
+const Text('Your line preview:', style: TextStyle(fontSize: 12, color: Colors.black54)),
+MathPreviewBox(eq: _typedCtl.text, fontSize: 22),
+
+
+if (_feedback != null && _ok)
+  Container(
+    width: double.infinity,
+    margin: const EdgeInsets.only(top: 6),
+    padding: const EdgeInsets.all(10),
+    decoration: BoxDecoration(
+      color: Colors.green.shade50,
+      borderRadius: BorderRadius.circular(10),
+      border: Border.all(color: const Color(0xFFB7E0B2)),
+    ),
+    child: Text(_feedback!, style: const TextStyle(color: Colors.green, fontSize: 13)),
+  ),
 
             if (_error != null) ...[
               const SizedBox(height: 8),
@@ -1464,7 +1637,8 @@ class _DistributeCardState extends State<DistributeCard> {
             const SizedBox(height: 10),
 
             const Text('Start:', style: TextStyle(fontSize: 14, color: Colors.black54)),
-            PrettyEq(widget.working, fontSize: 24),
+MathPreviewBox(eq: widget.working, fontSize: 22),
+
 
             const SizedBox(height: 10),
             TextField(
@@ -1476,6 +1650,9 @@ class _DistributeCardState extends State<DistributeCard> {
               ),
               onChanged: (_) => setState(() {}), // live paren count
             ),
+const SizedBox(height: 8),
+const Text('Your line preview:', style: TextStyle(fontSize: 12, color: Colors.black54)),
+MathPreviewBox(eq: _typedCtl.text, fontSize: 22),
 
             const SizedBox(height: 8),
             Text('Parentheses: $before → $after',
@@ -1681,16 +1858,24 @@ class _PrepPageState extends State<PrepPage> {
   // ---- Step 0: entry + validation ----
   final _eqCtl = TextEditingController();
   final _eqFocus = FocusNode();
+
   String? _entryError;            // plain-language parse error
-  bool _canStart = false;         // enables "Start Prep"
-  bool _highContrast = false;     // accessibility toggle
-  double _fontScale = 1.0;        // text size in this screen
+  bool _canStart = false;         // <— ADDED: used by the Start button
 
   // ---- Stage control ----
-  int _stage = 0;                 // 0 = entry/validate, 1 = your existing prep flow
-  late String working;            // the frozen equation after we start prep
+  int _stage = 0;                 // 0 = entry/validate, 1 = prep flow
+  late String working;            // frozen equation after we start prep
   bool needFractions = false;
   bool needParens = false;
+
+  // Scales text using global FontPrefs (no per-screen _fontScale)
+  TextStyle _scalable(TextStyle base) {
+    final prefs = FontScope.of(context);
+    return base.copyWith(fontSize: (base.fontSize ?? 16) * prefs.scale);
+  }
+
+
+
 
   @override
   void initState() {
@@ -1764,39 +1949,20 @@ class _PrepPageState extends State<PrepPage> {
     });
   }
 
-  TextStyle _scalable(TextStyle base) =>
-      base.copyWith(fontSize: (base.fontSize ?? 16) * _fontScale);
-
+  
   // ====== UI ======
-  @override
-  Widget build(BuildContext context) {
-    final hcBg = _highContrast ? const Color(0xFF0D0D0D) : Colors.white;
-    final hcFg = _highContrast ? Colors.white : Colors.black;
+ @override
+Widget build(BuildContext context) {
+  final prefs = FontScope.of(context);
+  final hcBg = prefs.highContrast ? const Color(0xFF0D0D0D) : Colors.white;
+  final hcFg = prefs.highContrast ? Colors.white : Colors.black;
 
     return Scaffold(
       appBar: AppBar(
         title: const Text('Prep: you do the setup'),
         backgroundColor: const Color.fromRGBO(236,229,243,1),
-        actions: [
-          // text size
-          Row(children: [
-            const SizedBox(width: 8),
-            const Icon(Icons.text_increase, size: 18),
-            Slider(
-              value: _fontScale,
-              min: 0.9,
-              max: 1.4,
-              divisions: 5,
-              onChanged: (v) => setState(() => _fontScale = v),
-            ),
-          ]),
-          // high contrast
-          IconButton(
-            tooltip: 'High contrast',
-            icon: Icon(_highContrast ? Icons.visibility : Icons.visibility_outlined),
-            onPressed: () => setState(() => _highContrast = !_highContrast),
-          ),
-        ],
+        actions: const [GlobalA11yActions()],
+
       ),
       body: Container(
         color: hcBg,
@@ -1825,38 +1991,29 @@ class _PrepPageState extends State<PrepPage> {
               const SizedBox(height: 10),
 
               // Large math keypad
-              Wrap(
-                spacing: 8, runSpacing: 8,
-                children: [
-                  for (final key in ['x','+','-','*','/','(',')','=','  '])
-                    _KeyBtn(label: key.trim().isEmpty ? 'space' : key, onTap: () => _insert(key == '  ' ? ' ' : key), highContrast: _highContrast),
-                  _KeyBtn(label: 'DEL', onTap: () {
-                    final t = _eqCtl.text;
-                    final sel = _eqCtl.selection;
-                    if (sel.isValid && !sel.isCollapsed) {
-                      _insert('');
-                    } else if (t.isNotEmpty) {
-                      final caret = sel.baseOffset >= 0 ? sel.baseOffset : t.length;
-                      final cut = caret > 0 ? caret - 1 : 0;
-                      _eqCtl.text = t.replaceRange(cut, caret, '');
-                      _eqCtl.selection = TextSelection.collapsed(offset: cut);
-                      _validateEntry(_eqCtl.text);
-                    }
-                  }, highContrast: _highContrast),
-                ],
-              ),
+             // Large math keypad
+Wrap(
+  spacing: 8,
+  runSpacing: 8,
+  children: [
+    // …buttons…
+  ],
+),
+const SizedBox(height: 12),
+Text('Preview', style: _scalable(const TextStyle(fontSize: 14, color: Colors.black54))),
+Container(
+  padding: const EdgeInsets.all(10),
+  decoration: BoxDecoration(
+    color: prefs.highContrast ? const Color(0xFF1A1A1A) : const Color(0xFFF7F5FB),
+    borderRadius: BorderRadius.circular(10),
+    border: Border.all(color: const Color(0xFFE3DAF3)),
+  ),
+  child: PrettyEq(_eqCtl.text, fontSize: 22),
+),
 
-              const SizedBox(height: 12),
-              Text('Preview', style: _scalable(const TextStyle(fontSize: 14, color: Colors.black54))),
-              Container(
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(
-                  color: _highContrast ? const Color(0xFF1A1A1A) : const Color(0xFFF7F5FB),
-                  borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: const Color(0xFFE3DAF3)),
-                ),
-                child: PrettyEq(_eqCtl.text, fontSize: 22 * _fontScale),
-              ),
+
+
+             
 
               const SizedBox(height: 8),
               if (_entryError != null)
@@ -1873,8 +2030,23 @@ class _PrepPageState extends State<PrepPage> {
 
             // ===== Stage 1: your existing flow (unchanged logic) =====
             if (_stage == 1) ...[
+                // compute once (statements are OK here because we’re still inside the list
+  // spread, but we must produce a value, so use a final expression)
+  Padding(
+    padding: const EdgeInsets.only(bottom: 8),
+    child: LinearProgressIndicator(
+      value: _hasSlash(working)
+          ? 0.33
+          : (_hasParens(working) ? 0.66 : 1.0),
+      color: Colors.deepPurple,
+      backgroundColor: Colors.deepPurple.withOpacity(0.15),
+    ),
+  ),
+
+
               Text('Current', style: _scalable(const TextStyle(fontSize: 14, color: Colors.black54))),
-              PrettyEq(working, fontSize: 22 * _fontScale),
+PrettyEq(working, fontSize: 22),
+              
               const SizedBox(height: 8),
 
               if (needFractions)
@@ -1953,8 +2125,51 @@ class _KeyBtn extends StatelessWidget {
     );
   }
 }
+class GlobalA11yActions extends StatelessWidget {
+  const GlobalA11yActions({super.key});
+  @override
+  Widget build(BuildContext context) {
+    final prefs = FontScope.of(context);
+    return Row(children: [
+      const Icon(Icons.text_increase, size: 18),
+      SizedBox(
+        width: 140,
+        child: Slider(
+          value: prefs.scale,
+          min: 0.9,
+          max: 1.4,
+          divisions: 5,
+          onChanged: prefs.setScale,
+        ),
+      ),
+      IconButton(
+        tooltip: 'High contrast',
+        icon: Icon(prefs.highContrast ? Icons.visibility : Icons.visibility_outlined),
+        onPressed: prefs.toggleHC,
+      ),
+    ]);
+  }
+}
 
 // ---------- Reusable UI helpers for clear instructions & visuals ----------
+class MathPreviewBox extends StatelessWidget {
+  final String eq;
+  final double fontSize;
+  const MathPreviewBox({super.key, required this.eq, this.fontSize = 22});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF7F5FB),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: const Color(0xFFE3DAF3)),
+      ),
+      child: PrettyEq(eq, fontSize: fontSize),
+    );
+  }
+}
 
 class LegendBar extends StatelessWidget {
   const LegendBar({super.key});
@@ -2024,6 +2239,52 @@ class InstructionBanner extends StatelessWidget {
     );
   }
 }
+class _ExplainBox extends StatelessWidget {
+  final String text;
+  final List<String> examples;
+  const _ExplainBox({required this.text, required this.examples});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(10),
+      margin: const EdgeInsets.only(bottom: 10),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF6F2FD),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFE0D2FA)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(text, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
+          const SizedBox(height: 6),
+          for (final ex in examples)
+            Text('• $ex', style: const TextStyle(fontSize: 13)),
+        ],
+      ),
+    );
+  }
+}
+
+class _FeedbackCard extends StatelessWidget {
+  final String text;
+  final Color color;
+  const _FeedbackCard({required this.text, required this.color});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(8),
+      margin: const EdgeInsets.only(top: 8),
+      decoration: BoxDecoration(
+        color: color,
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Text(text, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
+    );
+  }
+}
 
 class ExampleCard extends StatelessWidget {
   final String caption;
@@ -2076,17 +2337,16 @@ class _EquationPageState extends State<EquationPage> {
   }
 
   @override
-  void initState() {
-    super.initState();
-    findComponents(widget.equation);
-    int rightSum = getSum(constantsrightValues);
-    int leftSum = getSum(constantsleftValues);
-    correctAnswer = widget.correctAnswerOverride ?? (rightSum - leftSum);
-
-    if (widget.correctAnswerOverride != null) {
-      _answerController.text = correctAnswer.toString();
-    }
+void initState() {
+  super.initState();
+  final ab = computeAB(widget.equation);   // b = orange total
+  final b = ab.b;
+  correctAnswer = widget.correctAnswerOverride ?? b;
+  if (widget.correctAnswerOverride != null) {
+    _answerController.text = correctAnswer.toString();
   }
+}
+
 
   void checkAnswer() {
     int? userAnswer = int.tryParse(_answerController.text);
@@ -2108,19 +2368,24 @@ class _EquationPageState extends State<EquationPage> {
   }
 
   @override
-  Widget build(BuildContext context) {
-    String breakdown = constantsrightValues.join(' + ');
-    if (constantsleftValues.isNotEmpty) {
-      for (var val in constantsleftValues) {
-        breakdown += ' - $val';
-      }
-    }
-    breakdown += ' = ';
+Widget build(BuildContext context) {
+  // read global a11y prefs
+  final prefs = FontScope.of(context);
+  final hcBg = prefs.highContrast ? const Color(0xFF0D0D0D) : Colors.white;
 
-    return Scaffold(
-      appBar: AppBar(title: const Text("Step One"),
-        backgroundColor: Color.fromRGBO(236,229,243,1)),
-      body: Center(
+  
+
+  return Scaffold(
+    appBar: AppBar(
+      title: const Text("Step One"),
+      backgroundColor: const Color.fromRGBO(236,229,243,1),
+      // ✅ add the size slider + HC toggle here
+      actions: const [GlobalA11yActions()],
+    ),
+    // ✅ make the page react to high-contrast toggle
+    body: Container(
+      color: hcBg,
+      child: Center(
         child: Padding(
           padding: const EdgeInsets.all(16.0),
           child: Column(
@@ -2130,60 +2395,92 @@ class _EquationPageState extends State<EquationPage> {
                 'Step one:',
                 style: TextStyle(fontSize: 20),
               ),
-              findComponents(widget.equation),
+
+              // your colored equation (this respects MediaQuery.textScaleFactor)
+              findComponents(context, widget.equation)
+,
+
+
               const SizedBox(height: 10),
-const LegendBar(),
-InstructionBanner(
-  title: 'What to do',
-  bullets: [
-    'Add the orange numbers on the RIGHT.',
-    'Subtract the orange numbers on the LEFT from that sum.',
-    'Type the total in the box.',
-  ],
-),
-ExampleCard(
-  caption: 'Example',
-  body: RichText(
-    text: const TextSpan(
-      style: TextStyle(fontSize: 18, color: Colors.black),
-      children: [
-        TextSpan(text: 'On  '),
-        TextSpan(text: '3x + '),
-        TextSpan(text: '5', style: TextStyle(color: Color.fromARGB(255, 255, 149, 0))),
-        TextSpan(text: '  =  '),
-        TextSpan(text: '17', style: TextStyle(color: Color.fromARGB(255, 255, 149, 0))),
-        TextSpan(text: ', do  '),
-        TextSpan(text: '17 ' , style: TextStyle(color: Color.fromARGB(255, 255, 149, 0))),
-        TextSpan(text: '− '),
-        TextSpan(text: '5'  , style: TextStyle(color: Color.fromARGB(255, 255, 149, 0))),
-        TextSpan(text: '  =  12'),
-      ],
-    ),
-  ),
-),
+              const LegendBar(),
+
+              InstructionBanner(
+                title: 'What to do',
+                bullets: const [
+                  'Add the orange numbers on the RIGHT.',
+                  'Subtract the orange numbers on the LEFT from that sum.',
+                  'Type the total in the box.',
+                ],
+              ),
+
+              ExampleCard(
+                caption: 'Example',
+                body: RichText(
+                  text: const TextSpan(
+                    style: TextStyle(fontSize: 18, color: Colors.black),
+                    children: [
+                      TextSpan(text: 'On  '),
+                      TextSpan(text: '3x + '),
+                      TextSpan(text: '5', style: TextStyle(color: Color.fromARGB(255, 255, 149, 0))),
+                      TextSpan(text: '  =  '),
+                      TextSpan(text: '17', style: TextStyle(color: Color.fromARGB(255, 255, 149, 0))),
+                      TextSpan(text: ', do  '),
+                      TextSpan(text: '17 ', style: TextStyle(color: Color.fromARGB(255, 255, 149, 0))),
+                      TextSpan(text: '− '),
+                      TextSpan(text: '5',  style: TextStyle(color: Color.fromARGB(255, 255, 149, 0))),
+                      TextSpan(text: '  =  12'),
+                    ],
+                  ),
+                ),
+              ),
 
               const SizedBox(height: 20),
               const Text(
                 'Add all the orange numbers on the right side together. Then subtract the orange numbers on the left side from that sum.',
                 style: TextStyle(fontSize: 15),
+                textAlign: TextAlign.center,
               ),
+
               const SizedBox(height: 20),
-              Text(
-                breakdown,
-                style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Color.fromARGB(255, 255, 149, 0)),
-              ),
-              const SizedBox(height: 10),
-              SizedBox(
-                width: 100,
-                child: TextField(
-                  controller: _answerController,
+Builder(
+  builder: (_) {
+    String breakdown = '';
+    if (constantsrightValues.isNotEmpty) {
+      breakdown = constantsrightValues.join(' + ');
+    } else {
+      breakdown = '0';
+    }
+    for (final val in constantsleftValues) {
+      breakdown += ' - $val';
+    }
+    breakdown += ' = ';
+    return Text(
+      breakdown,
+      style: const TextStyle(
+        fontSize: 24,
+        fontWeight: FontWeight.bold,
+        color: Color.fromARGB(255, 255, 149, 0),
+      ),
+      textAlign: TextAlign.center,
+    );
+  },
+),
+const SizedBox(height: 10),
+SizedBox(
+  width: 100,
+  child: TextField(
+    controller: _answerController,
+    // ...
+
                   keyboardType: TextInputType.number,
+                  textAlign: TextAlign.center,
                   decoration: const InputDecoration(
                     hintText: '?',
                     border: OutlineInputBorder(),
                   ),
                 ),
               ),
+
               const SizedBox(height: 20),
               ElevatedButton(
                 onPressed: checkAnswer,
@@ -2193,8 +2490,9 @@ ExampleCard(
           ),
         ),
       ),
-    );
-  }
+    ),
+  );
+}
 }
 
 class StepTwoPage extends StatefulWidget {
@@ -2223,17 +2521,17 @@ class _StepTwoPageState extends State<StepTwoPage> {
     return step2Result != 0 ? (step1Result / step2Result).round() : 0;
   }
 
-  @override
-  void initState() {
-    super.initState();
-    findComponents(widget.equation);
-    int leftSum = getSum(xvalleftValues);
-    int rightSum = getSum(xvalrightValues);
-    correctAnswer = widget.correctAnswerOverride ?? (leftSum - rightSum);
-    if (widget.correctAnswerOverride != null) {
-      _answerController.text = correctAnswer.toString();
-    }
+ @override
+void initState() {
+  super.initState();
+  final ab = computeAB(widget.equation);  // a = blue total
+  final a = ab.a;
+  correctAnswer = widget.correctAnswerOverride ?? a;
+  if (widget.correctAnswerOverride != null) {
+    _answerController.text = correctAnswer.toString();
   }
+}
+
 
   String buildStep2Equation() {
     String result = '';
@@ -2269,23 +2567,38 @@ class _StepTwoPageState extends State<StepTwoPage> {
 
   @override
   Widget build(BuildContext context) {
+    final prefs = FontScope.of(context);
+  final hcBg = prefs.highContrast ? const Color(0xFF0D0D0D) : Colors.white;
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Step Two'),
-        backgroundColor: Color.fromRGBO(236, 229, 243, 1),
-      ),
-      body: Center(
+  appBar: AppBar(
+    title: const Text('Step Two'),
+    backgroundColor: const Color.fromRGBO(236, 229, 243, 1),
+    actions: const [GlobalA11yActions()], // ← ADDED
+  ),
+  body: Container(
+    color: hcBg,                            // ← ADDED
+    child: Center(
+
         child: Padding(
           padding: const EdgeInsets.all(16.0),
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              const Text(
-                'Step two:',
-                style: TextStyle(fontSize: 20),
-              ),
-              const SizedBox(height: 20),
-              findComponents(widget.equation),
+  const Text(
+    'Step two:',
+    style: TextStyle(fontSize: 20),
+  ),
+  const SizedBox(height: 12),
+
+  // ▼▼ ADDED PREVIEW
+  const Text('Current', style: TextStyle(fontSize: 14, color: Colors.black54)),
+  MathPreviewBox(eq: widget.equation, fontSize: 22),
+  const SizedBox(height: 12),
+  // ▲▲ ADDED PREVIEW
+
+  findComponents(context, widget.equation)
+,
+
               const SizedBox(height: 10),
 const LegendBar(),
 InstructionBanner(
@@ -2351,7 +2664,7 @@ ExampleCard(
           ),
         ),
       ),
-    );
+    ));
   }
 }
 
@@ -2378,10 +2691,8 @@ class _StepThreePageState extends State<StepThreePage> {
   @override
 void initState() {
   super.initState();
-  findComponents(widget.equation);
-
-  final b = getSum(constantsrightValues) - getSum(constantsleftValues); // orange
-  final a = getSum(xvalleftValues) - getSum(xvalrightValues);           // blue
+  final ab = computeAB(widget.equation);
+  final a = ab.a, b = ab.b;
 
   final status = solutionStatus(b, a);
   if (status.isNotEmpty) {
@@ -2397,11 +2708,11 @@ void initState() {
       _answerController.text = correctAnswer.toString();
     }
   } else {
-    // fraction mode: no input in this step
     correctAnswer = 0;
     _answerController.text = '';
   }
 }
+
 
 
 
@@ -2417,75 +2728,113 @@ void initState() {
 
 
   void checkAnswer() {
-    int? userAnswer = int.tryParse(_answerController.text);
-    if (userAnswer != null && userAnswer == correctAnswer) {
-      final box = Hive.box<SolvedProblem>('solved_problems');
-      final problem = SolvedProblem(
-        equation: widget.equation,
-        step1Answer: getSum(constantsrightValues) - getSum(constantsleftValues),
-        step2Answer: getSum(xvalleftValues) - getSum(xvalrightValues),
-        finalAnswer: correctAnswer,
-        solvedAt: DateTime.now(),
-      );
-      // Check for duplicate before adding
+  int? userAnswer = int.tryParse(_answerController.text);
+  if (userAnswer != null && userAnswer == correctAnswer) {
+    final box = Hive.box<SolvedProblem>('solved_problems');
+    final problem = SolvedProblem(
+      equation: widget.equation,
+      step1Answer: getSum(constantsrightValues) - getSum(constantsleftValues),
+      step2Answer: getSum(xvalleftValues) - getSum(xvalrightValues),
+      finalAnswer: correctAnswer,   // integer result
+      solvedAt: DateTime.now(),
+      finalAnswerText: null,        // <- important: keep null for integers
+    );
+
+    // dedupe: same equation AND same integer answer
     final alreadyExists = box.values.any((p) =>
-      p.equation == widget.equation &&
-      p.finalAnswer == correctAnswer
+      p.equation == problem.equation &&
+      p.finalAnswer == problem.finalAnswer &&
+      (p.finalAnswerText ?? '') == (problem.finalAnswerText ?? '')
     );
 
     if (!alreadyExists) {
       box.add(problem);
     }
 
-      Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (context) => FinalAnswerPage(finalAnswer: correctAnswer),
-        ),
-      );
-    } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Incorrect, try again.')),
-      );
-    }
+    Navigator.push(
+  context,
+  MaterialPageRoute(
+    builder: (context) => FinalAnswerPage(
+      equation: widget.equation,        // ← ADDED
+      finalAnswer: correctAnswer,
+    ),
+  ),
+);
+
+  } else {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Incorrect, try again.')),
+    );
   }
-      void _checkFractionAnswer() {
-    final b = getSum(constantsrightValues) - getSum(constantsleftValues); // orange
-    final a = getSum(xvalleftValues) - getSum(xvalrightValues);           // blue
-    if (a == 0) return;
+}
 
-    final target = _reduced(b, a);
-    final tn = target[0], td = target[1];
+     void _checkFractionAnswer() {
+  final b = getSum(constantsrightValues) - getSum(constantsleftValues); // orange
+  final a = getSum(xvalleftValues) - getSum(xvalrightValues);           // blue
+  if (a == 0) return;
 
-    final inNum = _safeParseInt(_numCtl.text);
-    final inDen = _safeParseInt(_denCtl.text);
+  final target = _reduced(b, a);
+  final tn = target[0], td = target[1];
 
-    final isFracGood = (inDen != 0) && _fractionsEqual(inNum, inDen, tn, td);
-    final isDecGood  = _decimalMatchesFraction(_decCtl.text, tn, td);
+  final inNum = _safeParseInt(_numCtl.text);
+  final inDen = _safeParseInt(_denCtl.text);
 
-    if (isFracGood || isDecGood) {
-      Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (_) => FinalAnswerPage(
-            finalAnswerText: '$tn/$td (= ${(b / a).toStringAsFixed(3)})',
-          ),
-        ),
-      );
-    } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Not quite—try simplifying the fraction.')),
-      );
-    }
-  
+  final isFracGood = (inDen != 0) && _fractionsEqual(inNum, inDen, tn, td);
+  final isDecGood  = _decimalMatchesFraction(_decCtl.text, tn, td);
+
+  if (isFracGood || isDecGood) {
+    final display = '$tn/$td (= ${(b / a).toStringAsFixed(3)})';
+
+    // SAVE to Hive (fraction path)
+    final box = Hive.box<SolvedProblem>('solved_problems');
+    final problem = SolvedProblem(
+  equation: widget.equation,
+  step1Answer: b,
+  step2Answer: a,
+  finalAnswer: 0,             // ← use 0 instead of null
+  solvedAt: DateTime.now(),
+  finalAnswerText: display,   // ← "n/d (= 0.xxx)"
+);
+
+
+    // dedupe: same equation AND same text answer
+    final exists = box.values.any((p) =>
+      p.equation == problem.equation &&
+      (p.finalAnswer ?? -999999) == (problem.finalAnswer ?? -999999) &&
+      (p.finalAnswerText ?? '') == (problem.finalAnswerText ?? '')
+    );
+
+    if (!exists) box.add(problem);
+
+    Navigator.push(
+  context,
+  MaterialPageRoute(
+    builder: (_) => FinalAnswerPage(
+      equation: widget.equation,        // ← ADDED
+      finalAnswerText: display,
+    ),
+  ),
+);
+
+  } else {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Not quite—try simplifying the fraction.')),
+    );
   }
+}
+
 
 
 
   @override
   
 Widget build(BuildContext context) {
+  // ▼ ADD
+  final prefs = FontScope.of(context);
+  final hcBg = prefs.highContrast ? const Color(0xFF0D0D0D) : Colors.white;
+
   // Compute b (orange) and a (blue)
+
   final b = getSum(constantsrightValues) - getSum(constantsleftValues);
   final a = getSum(xvalleftValues) - getSum(xvalrightValues);
 
@@ -2493,23 +2842,36 @@ Widget build(BuildContext context) {
   final status = solutionStatus(b, a);      // "No solution" / "Infinitely many solutions" / ""
   final frac = renderQuotient(b, a);        // from step (3), shows simplified fraction or integer
 
-  return Scaffold(
-    appBar: AppBar(
-      title: const Text('Step Three'),
-      backgroundColor: Color.fromRGBO(236, 229, 243, 1),
-    ),
-    body: Center(
+ return Scaffold(
+  appBar: AppBar(
+    title: const Text('Step Three'),
+    backgroundColor: const Color.fromRGBO(236, 229, 243, 1),
+    actions: const [GlobalA11yActions()], // ← ADDED
+  ),
+  body: Container(
+    color: hcBg,                            // ← ADDED
+    child: Center(
+
       child: Padding(
         padding: const EdgeInsets.all(16.0),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            const Text(
-              'Step three:',
-              style: TextStyle(fontSize: 20),
-            ),
-            const SizedBox(height: 20),
-            findComponents(widget.equation),
+  const Text(
+    'Step three:',
+    style: TextStyle(fontSize: 20),
+  ),
+  const SizedBox(height: 12),
+
+  // ▼▼ ADDED PREVIEW
+  const Text('Current', style: TextStyle(fontSize: 14, color: Colors.black54)),
+  MathPreviewBox(eq: widget.equation, fontSize: 22),
+  const SizedBox(height: 12),
+  // ▲▲ ADDED PREVIEW
+
+  findComponents(context, widget.equation)
+,
+
             const SizedBox(height: 20),
 
             // ▼▼▼ INSERTED STATUS MESSAGE BLOCK (this is what you asked for) ▼▼▼
@@ -2576,21 +2938,14 @@ RichText(
   text: TextSpan(
     style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Colors.black),
     children: [
-      // b / a
       TextSpan(text: '$b', style: const TextStyle(color: kOrange)),
       const TextSpan(text: ' / '),
       TextSpan(text: '$a', style: const TextStyle(color: Colors.blue)),
-
-      // Optional “= …” part to match your exgitample behavior:
-      // Show only if you already computed a displayable result.
-      if (frac.text.isNotEmpty) const TextSpan(text: '  =  '),
-      if (frac.isInteger)
-        TextSpan(text: '${frac.intValue}')
-      else if (frac.text.isNotEmpty)
-        TextSpan(text: frac.text), // e.g., "-3/4  (= -0.750)"
+      // intentionally no "= …" shown here
     ],
   ),
 ),
+
 
 const SizedBox(height: 20),
 
@@ -2697,32 +3052,78 @@ if (!frac.isInteger) ...[
         ),
       ),
     ),
-  );
+  ));
 }
 
 }
 
 class FinalAnswerPage extends StatelessWidget {
+  final String? equation;        // ← ADDED (optional preview)
   final int? finalAnswer;        // when integer
   final String? finalAnswerText; // when fraction or special text
 
-  const FinalAnswerPage({super.key, this.finalAnswer, this.finalAnswerText});
+  const FinalAnswerPage({super.key, this.equation, this.finalAnswer, this.finalAnswerText});
 
   @override
   Widget build(BuildContext context) {
+    final prefs = FontScope.of(context);
+  final hcBg = prefs.highContrast ? const Color(0xFF0D0D0D) : Colors.white;
     final display = finalAnswerText ?? finalAnswer?.toString() ?? '';
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Result'),
-        backgroundColor: Color.fromRGBO(236, 229, 243, 1),
-      ),
-      body: Center(
-        child: Text(
+  title: const Text('Result'),
+  backgroundColor: const Color.fromRGBO(236, 229, 243, 1),
+  actions: const [GlobalA11yActions()], // ← ADDED
+  // keep your home icon & leading back if you like (you already have them)
+  actionsIconTheme: const IconThemeData(),
+  // your existing actions/back buttons can remain
+),
+
+      body: Container(
+  color: hcBg, // ← ADDED
+  child: Center(
+    child: Column(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        if (equation != null) ...[
+          const Text('Original equation', style: TextStyle(fontSize: 14, color: Colors.black54)),
+          MathPreviewBox(eq: equation!, fontSize: 22),
+          const SizedBox(height: 16),
+        ],
+        Text(
           'Correct, the answer is $display',
-          style: const TextStyle(fontSize: 28, fontWeight: FontWeight.bold, color: Colors.green),
-          textAlign: TextAlign.center,
+
+              style: const TextStyle(
+                fontSize: 28,
+                fontWeight: FontWeight.bold,
+                color: Colors.green,
+              ),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 24),
+
+            // Big “Back to Home” button
+            ElevatedButton.icon(
+              onPressed: () => Navigator.of(context).popUntil((r) => r.isFirst),
+              icon: const Icon(Icons.home_outlined),
+              label: const Text('Back to Home'),
+              style: ElevatedButton.styleFrom(
+                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+              ),
+            ),
+
+            const SizedBox(height: 8),
+
+            // Optional: a simple “Back” to the previous step
+            TextButton.icon(
+              onPressed: () => Navigator.pop(context),
+              icon: const Icon(Icons.arrow_back),
+              label: const Text('Back'),
+            ),
+          ],
         ),
       ),
-    );
+    ));
   }
 }
+
